@@ -9,7 +9,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { getUserWorkspace } from "@/lib/queries";
 import { publicPageTag } from "@/lib/cache-tags";
 import { checkUrls, normalizeUrl } from "@/lib/safe-browsing";
-import { applyLiveEdit, urlsIntroducedByUpdate } from "@/lib/live-edit";
+import { applyBlockUpdate, applyLiveEdit, type BlockPatch } from "@/lib/live-edit";
 import { scheduleLinkFarmCheck } from "@/lib/link-farm-check";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import { getLimit, type PlanId } from "@/lib/entitlements";
@@ -208,15 +208,11 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
     return { error: "Invalid input" };
   }
 
-  // Verify ownership through the block's page. url/isVisible/type are read so
-  // we know whether this edit puts a new link in front of visitors.
+  // Verify ownership through the block's page. The block's current url and
+  // visibility are re-read inside applyBlockUpdate, under the live-edit
+  // protocol, so a concurrent edit to the same block cannot go unscanned.
   const [block] = await db
-    .select({
-      pageId: blocks.pageId,
-      type: blocks.type,
-      url: blocks.url,
-      isVisible: blocks.isVisible,
-    })
+    .select({ pageId: blocks.pageId, type: blocks.type })
     .from(blocks)
     .where(eq(blocks.id, parsed.data.id))
     .limit(1);
@@ -254,31 +250,17 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
     }
   }
 
-  const updates: Record<string, unknown> = { updatedAt: new Date() };
-  if (parsed.data.label !== undefined) updates.label = parsed.data.label;
-  if (parsed.data.url !== undefined) updates.url = normalizedUrl;
-  if (parsed.data.content !== undefined)
-    updates.content = contentResult.content;
-  if (parsed.data.isVisible !== undefined)
-    updates.isVisible = parsed.data.isVisible;
+  const patch: BlockPatch = {};
+  if (parsed.data.label !== undefined) patch.label = parsed.data.label;
+  if (parsed.data.url !== undefined) patch.url = normalizedUrl;
+  if (parsed.data.content !== undefined) patch.content = contentResult.content;
+  if (parsed.data.isVisible !== undefined) patch.isVisible = parsed.data.isVisible;
 
-  const introducedUrls = urlsIntroducedByUpdate(block, {
-    url: parsed.data.url !== undefined ? normalizedUrl : undefined,
-    isVisible: parsed.data.isVisible,
-  });
-
-  const outcome = await applyLiveEdit(db, {
+  const outcome = await applyBlockUpdate(db, {
     pageId: page.id,
-    introducedUrls,
+    blockId: parsed.data.id,
+    patch,
     checkUrls,
-    write: async (tx) => {
-      const [updated] = await tx
-        .update(blocks)
-        .set(updates)
-        .where(eq(blocks.id, parsed.data.id))
-        .returning();
-      return updated;
-    },
   });
 
   if (!outcome.ok) {
@@ -289,11 +271,12 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
 
   revalidatePath(`/${page.slug}`);
   revalidateTag(publicPageTag(page.slug), "max");
+  const { block: updated, introducedUrls } = outcome.value;
   if (outcome.isPublished && introducedUrls.length > 0 && block.type === "link") {
     scheduleLinkFarmCheck(page.id);
   }
 
-  return { block: outcome.value };
+  return { block: updated };
 }
 
 // ─── Delete Block ───────────────────────────────────────────────────────────
