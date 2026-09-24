@@ -5,8 +5,13 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { pages, blocks, pendingUrlScans } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import {
+  pages,
+  blocks,
+  pendingUrlScans,
+  pageModerationLog,
+} from "@/lib/db/schema";
+import { eq, and, or, desc } from "drizzle-orm";
 import { getUserWorkspace } from "@/lib/queries";
 import { publicPageTag } from "@/lib/cache-tags";
 import { checkUrls } from "@/lib/safe-browsing";
@@ -19,6 +24,11 @@ import {
 } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { hasFeature, type PlanId } from "@/lib/entitlements";
+import {
+  ADMIN_TAKEDOWN_SOURCE,
+  MODERATION_BLOCKED_ERROR,
+  isBlockedByModeration,
+} from "@/lib/moderation";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
 
@@ -321,6 +331,32 @@ export async function publishPage(pageId: string) {
   }
 
   const { page } = result;
+
+  // An admin takedown stands until the page is explicitly reinstated.
+  const [latestTakedown] = await db
+    .select({
+      action: pageModerationLog.action,
+      source: pageModerationLog.source,
+    })
+    .from(pageModerationLog)
+    .where(
+      and(
+        eq(pageModerationLog.pageId, pageId),
+        or(
+          eq(pageModerationLog.action, "reinstated"),
+          and(
+            eq(pageModerationLog.action, "unpublished"),
+            eq(pageModerationLog.source, ADMIN_TAKEDOWN_SOURCE),
+          ),
+        ),
+      ),
+    )
+    .orderBy(desc(pageModerationLog.createdAt))
+    .limit(1);
+
+  if (isBlockedByModeration(latestTakedown)) {
+    return { error: MODERATION_BLOCKED_ERROR };
+  }
 
   // Collect all outbound URLs from the page's blocks
   const pageBlocks = await db
