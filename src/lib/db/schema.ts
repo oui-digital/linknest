@@ -21,6 +21,7 @@ export const users = pgTable("users", {
   image: text("image"), // Auth.js convention (profile picture URL)
   emailVerified: timestamp("email_verified", { mode: "date" }),
   password: text("password"), // bcrypt hash — null for OAuth-only / magic-link-only users
+  suspendedAt: timestamp("suspended_at", { mode: "date" }), // set by an admin; blocks sign-in and drops live sessions
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });

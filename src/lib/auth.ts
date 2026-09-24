@@ -4,7 +4,7 @@ import GitHub from "next-auth/providers/github";
 import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import bcrypt from "bcryptjs";
-import { eq, and } from "drizzle-orm";
+import { eq, and, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
@@ -104,6 +104,17 @@ const adapter = {
   },
 };
 
+const SUSPENSION_RECHECK_MS = 5 * 60 * 1000;
+
+async function isSuspended(where: SQL): Promise<boolean> {
+  const [row] = await db
+    .select({ suspendedAt: users.suspendedAt })
+    .from(users)
+    .where(where)
+    .limit(1);
+  return Boolean(row?.suspendedAt);
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter,
   session: {
@@ -171,9 +182,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     error: "/login",
   },
   callbacks: {
-    jwt({ token, user }) {
+    // Runs for every provider, including before a magic link is emailed, so a
+    // suspended user can't start a new session by any route.
+    async signIn({ user }) {
+      if (!user.email) return true;
+      return !(await isSuspended(eq(users.email, user.email.toLowerCase())));
+    },
+    // Sessions are JWTs, so there is no session row to delete on suspension.
+    // Re-check the account periodically instead; returning null clears the
+    // cookie. The timestamp only persists where Auth.js can write cookies
+    // (middleware, route handlers) — elsewhere the check simply re-runs.
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+        token.suspensionCheckedAt = Date.now();
+        return token;
+      }
+
+      const checkedAt = (token.suspensionCheckedAt as number | undefined) ?? 0;
+      if (token.id && Date.now() - checkedAt > SUSPENSION_RECHECK_MS) {
+        if (await isSuspended(eq(users.id, token.id as string))) return null;
+        token.suspensionCheckedAt = Date.now();
       }
       return token;
     },
