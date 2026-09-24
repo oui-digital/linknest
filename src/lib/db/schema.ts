@@ -6,25 +6,42 @@ import {
   timestamp,
   boolean,
   integer,
+  bigint,
+  pgSequence,
   jsonb,
   primaryKey,
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ─── users (Auth.js-compatible) ──────────────────────────────────────────────
 
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  email: varchar("email", { length: 255 }).unique().notNull(),
-  name: varchar("name", { length: 255 }),
-  image: text("image"), // Auth.js convention (profile picture URL)
-  emailVerified: timestamp("email_verified", { mode: "date" }),
-  password: text("password"), // bcrypt hash — null for OAuth-only / magic-link-only users
-  suspendedAt: timestamp("suspended_at", { mode: "date" }), // set by an admin; blocks sign-in and drops live sessions
-  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: varchar("email", { length: 255 }).unique().notNull(),
+    name: varchar("name", { length: 255 }),
+    image: text("image"), // Auth.js convention (profile picture URL)
+    emailVerified: timestamp("email_verified", { mode: "date" }),
+    password: text("password"), // bcrypt hash — null for OAuth-only / magic-link-only users
+    suspendedAt: timestamp("suspended_at", { mode: "date" }), // set by an admin; blocks sign-in and drops live sessions
+    // Abuse key, NOT an identity: `email` stays exactly what the user signed up
+    // with and is what every login looks up. This is the address with plus
+    // tags and Gmail dots removed (src/lib/email-normalize.ts), used to stop
+    // one mailbox registering many accounts. Deliberately not unique:
+    // pre-existing collisions are left alone.
+    emailCanonical: varchar("email_canonical", { length: 255 }),
+    // Signup attribution, so a spam ring is visible in one query.
+    signupMethod: varchar("signup_method", { length: 20 }), // 'password' | 'magic_link' | 'google' | 'github'
+    signupIp: varchar("signup_ip", { length: 45 }),
+    signupUserAgent: varchar("signup_user_agent", { length: 512 }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("users_email_canonical_idx").on(table.emailCanonical)],
+);
 
 // ─── accounts (Auth.js OAuth provider linking) ──────────────────────────────
 
@@ -280,14 +297,31 @@ export const pendingUrlScans = pgTable(
 
 // ─── page_moderation_log (audit trail for takedowns) ─────────────────────────
 
+export const pageModerationLogSeq = pgSequence("page_moderation_log_seq");
+
 export const pageModerationLog = pgTable(
   "page_moderation_log",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // Total order of moderation events. Holds are folded in this order
+    // (src/lib/moderation.ts), not by created_at: now() is the transaction's
+    // start time, so two events serialized by the page lock can carry
+    // timestamps in the opposite order to the one they committed in.
+    //
+    // A column defaulting to a named sequence, not bigserial/identity: for
+    // those, `drizzle-kit push` sees "NOT NULL without a default" and
+    // TRUNCATES this table — the audit trail and the takedown state. With an
+    // explicit default Postgres fills existing rows instead, and the backfill
+    // in scripts/backfills/02 renumbers them into event order.
+    seq: bigint("seq", { mode: "number" })
+      .notNull()
+      .default(sql`nextval('page_moderation_log_seq'::regclass)`),
     pageId: uuid("page_id")
       .references(() => pages.id, { onDelete: "cascade" })
       .notNull(),
     action: varchar("action", { length: 30 }).notNull(), // 'unpublished' | 'warning' | 'reinstated'
+    // For 'unpublished' by a blocking source this names the hold; a
+    // 'reinstated' row clears the hold with the same code, or all with 'all'.
     reasonCode: varchar("reason_code", { length: 30 }).notNull(), // 'safe_browsing_flagged' | 'manual_review' | etc.
     source: varchar("source", { length: 30 }).notNull(), // 'cron_rescan' | 'publish_block' | 'admin_manual' | etc.
     details: text("details"),
@@ -297,6 +331,7 @@ export const pageModerationLog = pgTable(
   (table) => [
     index("page_moderation_log_page_id_idx").on(table.pageId),
     index("page_moderation_log_created_at_idx").on(table.createdAt),
+    index("page_moderation_log_page_seq_idx").on(table.pageId, table.seq),
   ],
 );
 

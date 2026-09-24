@@ -37,6 +37,7 @@ Open http://localhost:3000.
 | `pnpm dev` | Dev server |
 | `pnpm build` | Production build |
 | `pnpm test` | Unit tests (Vitest) |
+| `pnpm test:integration` | Integration tests against a disposable Postgres (`TEST_DATABASE_URL`, required) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm lint` | ESLint |
 | `pnpm db:push` | Push schema to the database |
@@ -80,7 +81,43 @@ anchored regex.
 after a downgrade grace period, rescans URLs queued when Safe Browsing timed out,
 and prunes old Stripe dedup rows. It requires `CRON_SECRET`.
 
+**Publishing and live edits.** Every link on a published page has passed Safe
+Browsing. `publishPageCore` (`src/lib/publish.ts`) and block edits
+(`applyLiveEdit` in `src/lib/live-edit.ts`) scan outside the transaction, then
+lock the page row: an edit rechecks `is_published`, publish rechecks
+`content_version` and moderation holds, and either retries if something moved.
+New free pages carry `noindex` and stay out of the sitemap for 14 days after
+`first_published_at` (`src/lib/indexing.ts`). User links are always
+`rel="nofollow ugc me"`.
+
+**Moderation.** State is a set of holds folded from `page_moderation_log` in
+`seq` order (`src/lib/moderation.ts`). An `unpublished` row from `admin_manual`
+or `report_threshold` adds a hold named by its `reason_code`
+(`manual_review`, `account_suspended`, `user_reports`); a `reinstated` row
+clears the same code, or everything with `all`. A page with any hold cannot be
+published. Cron unpublishes (plan downgrade, flagged link) are not holds.
+Takedowns lock the page row and expire its cache with `{ expire: 0 }`.
+
+There is no admin UI. The API takes `Authorization: Bearer $ADMIN_API_SECRET`:
+
+```bash
+curl -X POST "$SITE/api/admin/moderate" -H "Authorization: Bearer $ADMIN_API_SECRET" \
+  -H 'content-type: application/json' -d '{"action":"takedown_page","slug":"example","reason":"casino spam"}'
+curl -X POST "$SITE/api/admin/moderate" -H "Authorization: Bearer $ADMIN_API_SECRET" \
+  -H 'content-type: application/json' -d '{"action":"reinstate_page","slug":"example","reasonCode":"manual_review"}'
+curl "$SITE/api/admin/reports?days=7" -H "Authorization: Bearer $ADMIN_API_SECRET"
+```
+
+Commands: `takedown_page` / `reinstate_page` (`pageId` or `slug`; reinstate
+needs `reasonCode`), `suspend_user` / `reinstate_user` (`userId` or `email`).
+Suspending holds every page the user *owns* and drops their session within five
+minutes; reinstating lifts only the suspension hold and never republishes.
+Alerts go to `ADMIN_ALERT_EMAIL`.
+
+**Schema backfills.** Some schema changes need a one-off SQL step right after
+`pnpm db:push`; they live in `scripts/backfills/`, numbered in order.
+
 ## Known gaps
 
 Not yet implemented: account deletion, data export, password reset, resend
-verification, an admin/moderation UI over `page_reports`, and custom domains.
+verification, a moderation UI (moderation is API-only), and custom domains.

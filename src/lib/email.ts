@@ -144,3 +144,45 @@ export async function sendAdminAlert({
   }
   await sendEmail({ to, subject: `[LinkNest] ${subject}`, html });
 }
+
+const TAKEDOWN_REASON_TEXT: Record<string, string> = {
+  manual_review:
+    "It was reviewed by the LinkNest team and found to violate our Terms of Service.",
+  user_reports:
+    "It received several reports from visitors and is unpublished while we review it.",
+};
+
+/**
+ * Tell a page owner their page was taken down. Sent only when a takedown
+ * actually changed the page (never on a repeat), so the owner gets one email.
+ */
+export async function sendPageTakedownEmail({
+  to,
+  slug,
+  reasonCode,
+}: {
+  to: string;
+  slug: string;
+  reasonCode: string;
+}) {
+  const reason =
+    TAKEDOWN_REASON_TEXT[reasonCode] ??
+    "It was found to violate our Terms of Service.";
+  await sendEmail({
+    to,
+    subject: `Your LinkNest page @${slug} was unpublished`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+        <h2 style="margin-bottom: 24px;">Your page was unpublished</h2>
+        <p style="color: #555; line-height: 1.6;">
+          Your LinkNest page <strong>@${escapeHtml(slug)}</strong> is no longer public.
+          ${escapeHtml(reason)}
+        </p>
+        <p style="color: #555; line-height: 1.6;">
+          If you think this is a mistake, reply to support@linknest.click and
+          include your page address.
+        </p>
+      </div>
+    `,
+  });
+}
