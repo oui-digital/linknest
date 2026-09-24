@@ -25,7 +25,7 @@ export default function TermsPage() {
             Terms of Service
           </h1>
           <p className="mt-4 text-sm text-slate">
-            Last updated: February 10, 2026
+            Last updated: September 23, 2026
           </p>
 
           {/* 1. Service Description */}
@@ -109,9 +109,30 @@ export default function TermsPage() {
                   Use the Service to distribute malware, phishing links, or scams
                 </li>
                 <li>Interfere with the operation of the Service</li>
+                <li>
+                  Publish spam, including bulk, repetitive, or automatically
+                  generated pages
+                </li>
+                <li>
+                  Create pages primarily to build backlinks or manipulate search
+                  engine rankings rather than to present yourself or your work
+                  to visitors
+                </li>
+                <li>
+                  Promote gambling, betting, lotteries, or other regulated
+                  activities without every license and authorization required
+                  where you and your visitors are located
+                </li>
               </ul>
               <p>
                 URLs added to pages may be checked against threat databases.
+              </p>
+              <p>
+                We may review, remove, or unpublish any content, or refuse or
+                limit access to the Service, at our sole discretion and without
+                prior notice, including where we believe content violates these
+                Terms or harms the Service, its users, or third parties. We are
+                not obligated to monitor content.
               </p>
             </div>
           </section>
@@ -217,8 +238,10 @@ export default function TermsPage() {
             <div className="mt-4 text-[15px] leading-relaxed text-slate">
               <p>
                 We may suspend or terminate accounts that violate these Terms or
-                pose a security or legal risk. Users may stop using the Service
-                at any time.
+                pose a security or legal risk, and may do so without prior
+                notice. Content unpublished under these Terms may not be
+                republished without our approval. Users may stop using the
+                Service at any time.
               </p>
             </div>
           </section>

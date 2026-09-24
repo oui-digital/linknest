@@ -1,6 +1,7 @@
 # LinkNest — Technical Summary for Legal Review
 
 **Prepared:** 2026-02-10
+**Updated:** 2026-09-23 — added section 9a (content moderation and account suspension); updated section 10 to reflect the published Terms and Privacy pages, the background URL rescan, and session revocation via suspension.
 **Source:** Direct inspection of all source files in the LinkNest repository
 **Purpose:** Factual reference for drafting Privacy Policy and Terms of Service
 **Disclaimer:** This document contains no legal language and no legal advice. All statements describe the current implementation as found in the codebase.
@@ -11,7 +12,7 @@
 
 ### What the app does
 
-LinkNest is a "link-in-bio" web application. It lets users create a single public webpage (at a URL like `linknest.app/@username`) that contains a curated collection of links, text, headers, images, and dividers. Visitors can view this page and click through to the user's linked destinations.
+LinkNest is a "link-in-bio" web application. It lets users create a single public webpage (at a URL like `linknest.click/@username`) that contains a curated collection of links, text, headers, images, and dividers. Visitors can view this page and click through to the user's linked destinations.
 
 ### Who it is for
 
@@ -257,6 +258,38 @@ Rate limiting uses Upstash Redis and **degrades gracefully**: if Redis is unavai
 
 ---
 
+## 9a) Content Moderation & Account Suspension
+
+### Automated checks
+
+- **At publish time**, every URL on the page is checked against Google Safe Browsing. Publishing is refused if any URL is flagged. If the check times out, the page is published and its URLs are queued in `pending_url_scans`.
+- **A daily background job** (04:00 UTC) rescans queued URLs. A page with a flagged URL is unpublished automatically and the owner is told to remove the link and re-publish.
+- **Safe Browsing only detects malware, phishing, and similar threats.** It does not detect spam, SEO/backlink pages, gambling, or other Terms violations. There is no automated content or keyword filtering.
+
+### Abuse reports
+
+Every public page shows a "Report this page" link. Reports (reason: phishing, malware, spam, or other, plus optional details) are stored in `page_reports` together with the reporter's IP address. Reports are not acted on automatically.
+
+### Manual takedowns
+
+- An administrator can unpublish a page. Each takedown is recorded in `page_moderation_log` with the action, a reason code, the source (`admin_manual`), a message intended for the owner, and a timestamp. That message is not currently shown to the owner anywhere in the app, and no email is sent. When an owner of a taken-down page tries to publish, they see a generic notice that the page was unpublished for violating the Terms, with a support contact.
+- **A page taken down by an administrator cannot be republished by its owner.** Publishing stays blocked until an administrator records a `reinstated` entry for that page.
+- Automated unpublishes (plan downgrade, flagged link) do not block republishing; the owner can fix the cause and publish again.
+- Takedowns and reinstatements are currently performed directly in the database. There is no admin UI.
+
+### Account suspension
+
+- An administrator can suspend an account by setting `users.suspended_at`.
+- A suspended user cannot sign in by any method (password, magic link, Google, GitHub). No magic-link email is sent to a suspended account.
+- Existing sessions are re-checked on use, at most 5 minutes apart, so a suspended user's session ends within about 5 minutes of their next visit.
+- Suspension does not delete any data: the account, workspace, pages, and blocks are retained. Un-suspending restores access.
+
+### Terms of Service basis
+
+The Terms (section 5, Acceptable Use) prohibit unlawful or malicious content, spam, pages created primarily to build backlinks or manipulate search rankings, and unlicensed gambling, betting, or lottery promotion. They reserve the right to remove or unpublish content and to suspend accounts at LinkNest's sole discretion and without prior notice (sections 5 and 12), and state that content unpublished under the Terms may not be republished without approval.
+
+---
+
 ## 10) Known Limitations / Not Yet Implemented
 
 The following items are either incomplete or absent in the current codebase:
@@ -264,18 +297,18 @@ The following items are either incomplete or absent in the current codebase:
 | Item | Status |
 |---|---|
 | **Account deletion / data erasure** | Not implemented. There is no way for users to delete their account or request data removal through the application. |
-| **Privacy Policy page** | The route `/privacy` is reserved in the middleware but no page content exists. |
-| **Terms of Service page** | The route `/terms` is reserved in the middleware but no page content exists. |
+| **Privacy Policy page** | Published at `/privacy` (last updated February 10, 2026). It does not yet describe moderation or suspension (section 9a). |
+| **Terms of Service page** | Published at `/terms` (last updated September 23, 2026). |
 | **Cookie consent mechanism** | Not implemented. (May not be needed given the current cookie usage — legal determination required.) |
-| **Admin panel / moderation interface** | A `page_moderation_log` table exists in the database schema, but no admin UI or moderation workflow is built. |
-| **Background URL scanning** | URLs that fail the Safe Browsing check due to timeout are queued in `pending_url_scans`, but no background worker exists to process this queue. |
+| **Admin panel / moderation interface** | Takedowns, reinstatements, and suspensions are recorded (see section 9a) but performed directly in the database. There is no admin UI, and owners are not notified (see section 9a). |
+| **Content filtering** | No automated detection of spam, backlink pages, gambling, or other Terms violations beyond Safe Browsing (see section 9a). |
 | **Data export** | No mechanism for users to export their data. |
 | **Email change** | No mechanism for users to change their email address. |
 | **Password change / reset** | No password change or reset flow is implemented. |
 | **Two-factor authentication** | Not implemented. |
-| **Session revocation** | Since sessions are JWT-based (stateless), there is no mechanism to forcibly revoke an active session. |
+| **Session revocation** | Sessions are JWT-based (stateless). Individual sessions cannot be revoked, but suspending an account ends all of its sessions within about 5 minutes (see section 9a). |
 | **Data retention policy** | No automated data retention or deletion rules are implemented. |
-| **Audit logging** | No user-facing activity log or audit trail. |
+| **Audit logging** | No user-facing activity log. Moderation actions are logged internally in `page_moderation_log`; account suspensions record only the time in `users.suspended_at`, with no reason or actor. |
 | **Email enumeration** | The registration flow reveals whether an email is already registered ("An account with this email already exists"). The magic link flow does not (it silently succeeds on all inputs). |
 
 ---
