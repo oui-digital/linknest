@@ -1,7 +1,12 @@
 import { headers } from "next/headers";
 
 /**
- * Best-effort client IP, used for rate limiting.
+ * Best-effort client IP, used for rate limiting and abuse keys
+ * (abuseKeyForIp in src/lib/ip.ts).
+ *
+ * On Vercel the platform sets x-vercel-forwarded-for on every request, so only
+ * the first branch is reached in production; x-real-ip and x-forwarded-for
+ * are fallbacks for local development and other hosts.
  *
  * Prefers headers the hosting platform sets itself. Falls back to the LAST
  * `x-forwarded-for` entry rather than the first: every earlier entry is

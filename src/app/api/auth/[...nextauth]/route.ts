@@ -20,6 +20,15 @@ export async function POST(
 ) {
   const { nextauth } = await context.params;
   const route = nextauth?.join("/") ?? "";
+
+  // Magic links are requested only through the sendMagicLink Server Action,
+  // which verifies Turnstile and applies new-account admission, then calls
+  // signIn("email") in-process — it never reaches this handler. The HTTP
+  // endpoint was therefore just a way around those checks.
+  if (route === "signin/email") {
+    return NextResponse.json({ error: "Not available" }, { status: 403 });
+  }
+
   const ip = await getClientIp();
 
   if (route === "callback/credentials") {
@@ -32,7 +41,7 @@ export async function POST(
     }
   }
 
-  if (route === "signin/email" || route === "callback/email") {
+  if (route === "callback/email") {
     const rl = await checkRateLimit(emailRateLimit, `ip:${ip}`);
     if (!rl.success) {
       return NextResponse.json(

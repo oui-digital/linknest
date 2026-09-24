@@ -49,6 +49,57 @@ export const mutationRateLimit = redis
     })
   : null;
 
+/**
+ * Report limiter: 3 reports per day per reporter abuse key (an IPv4 address or
+ * an IPv6 /64, see src/lib/ip.ts). Atomic, unlike counting page_reports rows,
+ * which two concurrent requests could both pass.
+ */
+export const reportRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(3, "1 d"),
+      prefix: "rl:report",
+    })
+  : null;
+
+/**
+ * Alert throttle: at most one "page reported" email per page per day. A
+ * takedown always alerts regardless.
+ */
+export const alertDedupeRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(1, "1 d"),
+      prefix: "rl:alert",
+    })
+  : null;
+
+/**
+ * New-account admission: 10 new accounts per hour per abuse key (IPv4 address
+ * or IPv6 /64). Applies only to addresses with no account yet, so it never
+ * locks existing users out of signing in from a shared network.
+ */
+export const signupIpRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(10, "1 h"),
+      prefix: "rl:signup-ip",
+    })
+  : null;
+
+/**
+ * Outbound auth email per network: 30 magic-link or verification emails per
+ * hour per abuse key, for existing users too. Deliberately looser than the
+ * signup limit and kept separate from it.
+ */
+export const emailIpRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(30, "1 h"),
+      prefix: "rl:email-ip",
+    })
+  : null;
+
 // Missing rate-limit config used to silently disable every limiter with no
 // signal at all — one absent env var removed a security control invisibly.
 if (!redis && process.env.NODE_ENV === "production") {

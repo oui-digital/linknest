@@ -188,7 +188,8 @@ async function enforcePageLimits(): Promise<number> {
     );
 
     for (const page of excess) {
-      revalidateTag(publicPageTag(page.slug), "max");
+      // Expire immediately: "max" would keep serving the cached live page.
+      revalidateTag(publicPageTag(page.slug), { expire: 0 });
     }
     unpublished += excess.length;
   }
@@ -251,7 +252,8 @@ async function rescanPendingUrls(): Promise<{
         "Your page was unpublished because a link on it was flagged as unsafe. Remove the flagged link and re-publish.",
     });
 
-    if (page) revalidateTag(publicPageTag(page.slug), "max");
+    // Expire immediately: a page with a flagged link must stop serving now.
+    if (page) revalidateTag(publicPageTag(page.slug), { expire: 0 });
   }
 
   return { scanned: pending.length, flagged: flaggedPageIds.size };

@@ -1,14 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { USER_LINK_REL, isExternalPage } from "./link-rel";
 
 /**
- * Mirrors the rule in src/components/blocks/link-block.tsx.
- *
  * Every link block used to render target="_blank" unconditionally. For a tel:
  * link — which a local business page will have — that hands off to the dialer
  * while leaving a blank tab behind, and on desktop it is just a dead tab.
  */
-const isExternalPage = (url: string) => /^https?:/i.test(url);
-
 describe("link block target behaviour", () => {
   it("opens web destinations in a new tab", () => {
     for (const url of [
@@ -33,5 +30,23 @@ describe("link block target behaviour", () => {
     for (const url of ["javascript:alert(1)", "data:text/html,x"]) {
       expect(isExternalPage(url), url).toBe(false);
     }
+  });
+});
+
+describe("user link rel", () => {
+  const tokens = USER_LINK_REL.split(" ");
+
+  it("does not pass ranking signals to user-supplied destinations", () => {
+    expect(tokens).toContain("nofollow");
+    expect(tokens).toContain("ugc");
+  });
+
+  it("keeps rel=me so Mastodon profile verification still works", () => {
+    expect(tokens).toContain("me");
+  });
+
+  it("keeps the tab-isolation tokens", () => {
+    expect(tokens).toContain("noopener");
+    expect(tokens).toContain("noreferrer");
   });
 });
