@@ -122,6 +122,20 @@ Suspending holds every page the user *owns* and drops their session within five
 minutes; reinstating lifts only the suspension hold and never republishes.
 Alerts go to `ADMIN_ALERT_EMAIL`.
 
+**Signup.** `users.email` is the login identity, stored as typed (lowercased).
+`users.email_canonical` is only an abuse key (`src/lib/email-normalize.ts`:
+Gmail dots and `+tags` removed). New accounts, from any provider, pass
+admission (`src/lib/signup-admission.ts`): a per-network signup limit, no
+disposable domain, and no *established* account (verified, or with a linked
+OAuth account) on the same canonical mailbox. Existing users skip admission.
+The mailbox rule is enforced atomically wherever a row becomes established —
+password verification, magic-link creation and activation, and `linkAccount`
+for OAuth — under an advisory lock on the canonical address. Password and
+magic-link forms answer an alias of an existing account with the usual
+"check your email" and email the mailbox instead, so they reveal nothing.
+`POST /api/auth/signin/email` is refused; magic links go through the Server
+Action only.
+
 **Schema backfills.** Some schema changes need a one-off SQL step right after
 `pnpm db:push`; they live in `scripts/backfills/`, numbered in order.
 

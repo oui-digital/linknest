@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { pageModerationLog, pageReports, pages, users, workspaceMembers } from "@/lib/db/schema";
 import { publishPageCore } from "@/lib/publish";
@@ -6,9 +6,10 @@ import { takedownPage } from "@/lib/moderation-actions";
 import { runModerationCommand, type AdminDeps } from "@/lib/admin-moderation";
 import { listReportedPages } from "@/lib/admin-reports";
 import { MODERATION_BLOCKED_ERROR } from "@/lib/moderation";
-import { createTestDb, fakeCheckUrls, gate, seedOwnedPage, seedUser, truncateAll } from "./helpers";
+import { createTestDb, fakeCheckUrls, gate, seedOwnedPage, seedUser, truncateAll, warmPool } from "./helpers";
 
 const { db, pool } = createTestDb();
+beforeAll(() => warmPool(pool));
 beforeEach(() => truncateAll(db));
 afterAll(() => pool.end());
 

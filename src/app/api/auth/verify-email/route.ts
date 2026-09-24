@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
 import { verifyToken } from "@/lib/tokens";
+import { activateVerifiedEmail } from "@/lib/signup-admission";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -18,11 +17,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=expired-token", req.url));
   }
 
-  // Mark the user's email as verified
-  await db
-    .update(users)
-    .set({ emailVerified: new Date(), updatedAt: new Date() })
-    .where(eq(users.email, email));
+  // Verification is where a password signup becomes an established account,
+  // so it is refused when another established account already owns this
+  // mailbox under a different spelling (src/lib/signup-admission.ts). Only
+  // the mailbox owner can click this link, so saying so leaks nothing.
+  const result = await activateVerifiedEmail(db, email);
+  if (result === "conflict") {
+    return NextResponse.redirect(new URL("/login?error=identity-conflict", req.url));
+  }
+  if (result === "not_found") {
+    return NextResponse.redirect(new URL("/login?error=invalid-token", req.url));
+  }
 
   return NextResponse.redirect(new URL("/login?verified=true", req.url));
 }

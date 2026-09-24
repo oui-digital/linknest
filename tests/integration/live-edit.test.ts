@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { blocks, pages, pendingUrlScans } from "@/lib/db/schema";
 import { applyLiveEdit } from "@/lib/live-edit";
@@ -9,9 +9,11 @@ import {
   gate,
   seedOwnedPage,
   truncateAll,
+  warmPool,
 } from "./helpers";
 
 const { db, pool } = createTestDb();
+beforeAll(() => warmPool(pool));
 beforeEach(() => truncateAll(db));
 afterAll(() => pool.end());
 

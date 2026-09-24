@@ -1,13 +1,14 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { pageModerationLog, pageReports, pages } from "@/lib/db/schema";
 import { recordReport } from "@/lib/reports";
 import { reinstatePage } from "@/lib/moderation-actions";
 import { abuseKeyForIp } from "@/lib/ip";
 import { listReportedPages } from "@/lib/admin-reports";
-import { createTestDb, seedOwnedPage, truncateAll } from "./helpers";
+import { createTestDb, seedOwnedPage, truncateAll, warmPool } from "./helpers";
 
 const { db, pool } = createTestDb();
+beforeAll(() => warmPool(pool));
 beforeEach(() => truncateAll(db));
 afterAll(() => pool.end());
 

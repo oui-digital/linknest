@@ -186,3 +186,32 @@ export async function sendPageTakedownEmail({
     `,
   });
 }
+
+/**
+ * Sent instead of a sign-in or verification email when someone tries to open
+ * a new account with a different spelling of a mailbox that already has one
+ * (for example a +tag or dotted Gmail address). The person who submitted the
+ * form sees the usual "check your email" message either way, so the form does
+ * not reveal which addresses have accounts; only the mailbox owner reads this.
+ */
+export async function sendExistingAccountNotice({ to }: { to: string }) {
+  await sendEmail({
+    to,
+    subject: "You already have a LinkNest account",
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+        <h2 style="margin-bottom: 24px;">You already have an account</h2>
+        <p style="color: #555; line-height: 1.6;">
+          Someone asked to create a LinkNest account for this address, but this
+          mailbox already has an account under a different form of the same
+          address (for example without a "+" tag or dots).
+        </p>
+        <p style="color: #555; line-height: 1.6;">
+          Sign in with the address and method you used originally at
+          <a href="${APP_URL}/login">${APP_URL}/login</a>. If you didn't request
+          this, you can ignore this email.
+        </p>
+      </div>
+    `,
+  });
+}

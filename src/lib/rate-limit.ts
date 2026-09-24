@@ -74,6 +74,32 @@ export const alertDedupeRateLimit = redis
     })
   : null;
 
+/**
+ * New-account admission: 10 new accounts per hour per abuse key (IPv4 address
+ * or IPv6 /64). Applies only to addresses with no account yet, so it never
+ * locks existing users out of signing in from a shared network.
+ */
+export const signupIpRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(10, "1 h"),
+      prefix: "rl:signup-ip",
+    })
+  : null;
+
+/**
+ * Outbound auth email per network: 30 magic-link or verification emails per
+ * hour per abuse key, for existing users too. Deliberately looser than the
+ * signup limit and kept separate from it.
+ */
+export const emailIpRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(30, "1 h"),
+      prefix: "rl:email-ip",
+    })
+  : null;
+
 // Missing rate-limit config used to silently disable every limiter with no
 // signal at all — one absent env var removed a security control invisibly.
 if (!redis && process.env.NODE_ENV === "production") {

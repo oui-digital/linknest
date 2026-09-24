@@ -2,107 +2,19 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
 import Credentials from "next-auth/providers/credentials";
-import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import bcrypt from "bcryptjs";
-import { eq, and, type SQL } from "drizzle-orm";
+import { headers } from "next/headers";
+import { eq, and, isNull, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import {
-  users,
-  accounts,
-  sessions,
-  verificationTokens,
-} from "@/lib/db/schema";
+import { users } from "@/lib/db/schema";
 import { sendMagicLinkEmail } from "@/lib/email";
+import { createAuthAdapter } from "@/lib/auth-adapter";
+import { oauthSignupRedirect } from "@/lib/signup-admission";
+import { getClientIp } from "@/lib/request-ip";
 
-// DrizzleAdapter's internal queries fail on Vercel with opaque NeonDbError.
-// Override critical methods with direct Drizzle queries that work reliably.
-const baseAdapter = DrizzleAdapter(db, {
-  usersTable: users,
-  accountsTable: accounts,
-  sessionsTable: sessions,
-  verificationTokensTable: verificationTokens,
-});
-
-const adapter = {
-  ...baseAdapter,
-  async getUserByEmail(email: string) {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-    return user ?? null;
-  },
-  /**
-   * Account-takeover guard.
-   *
-   * registerWithPassword creates a users row for ANY email with no proof of
-   * ownership (emailVerified = null). If the real owner of that mailbox later
-   * signs in with a magic link or OAuth, @auth/core activates that same row by
-   * setting emailVerified — which silently arms the password a stranger chose,
-   * because the Credentials provider's only gate is emailVerified.
-   *
-   * So: whenever a sign-in activates a previously unverified account, discard
-   * any password on it. A password that was already verified survives, since
-   * such a row has emailVerified set and never enters this branch.
-   */
-  async updateUser(data: { id: string; emailVerified?: Date | null }) {
-    if (data.emailVerified) {
-      const [current] = await db
-        .select({
-          emailVerified: users.emailVerified,
-          password: users.password,
-        })
-        .from(users)
-        .where(eq(users.id, data.id))
-        .limit(1);
-
-      if (current && !current.emailVerified && current.password) {
-        await db
-          .update(users)
-          .set({ password: null })
-          .where(eq(users.id, data.id));
-      }
-    }
-
-    return baseAdapter.updateUser!(data as Parameters<
-      NonNullable<typeof baseAdapter.updateUser>
-    >[0]);
-  },
-  async createVerificationToken(data: {
-    identifier: string;
-    token: string;
-    expires: Date;
-  }) {
-    const [created] = await db
-      .insert(verificationTokens)
-      .values(data)
-      .returning();
-    return created ?? null;
-  },
-  async useVerificationToken(data: { identifier: string; token: string }) {
-    const [existing] = await db
-      .select()
-      .from(verificationTokens)
-      .where(
-        and(
-          eq(verificationTokens.identifier, data.identifier),
-          eq(verificationTokens.token, data.token),
-        ),
-      )
-      .limit(1);
-    if (!existing) return null;
-    await db
-      .delete(verificationTokens)
-      .where(
-        and(
-          eq(verificationTokens.identifier, data.identifier),
-          eq(verificationTokens.token, data.token),
-        ),
-      );
-    return existing;
-  },
-};
+// Direct Drizzle queries, plus the one-account-per-mailbox checks at every
+// point where an account is created or activated (src/lib/auth-adapter.ts).
+const adapter = createAuthAdapter(db);
 
 const SUSPENSION_RECHECK_MS = 5 * 60 * 1000;
 
@@ -175,6 +87,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
+  events: {
+    // Signup attribution for magic-link and OAuth accounts (password signups
+    // record it at insert). Attribution only — admission happened before the
+    // user was created — so a failure here is logged and never blocks
+    // sign-in. For magic links the IP is the one that clicked the link.
+    async signIn({ user, account, isNewUser }) {
+      if (!isNewUser || !user.id) return;
+      try {
+        const provider = account?.provider;
+        await db
+          .update(users)
+          .set({
+            signupMethod: provider === "email" ? "magic_link" : (provider ?? null),
+            signupIp: await getClientIp(),
+            signupUserAgent: (await headers()).get("user-agent")?.slice(0, 512) ?? null,
+          })
+          .where(and(eq(users.id, user.id), isNull(users.signupMethod)));
+      } catch (error) {
+        console.error("[auth] Failed to record signup attribution:", error);
+      }
+    },
+  },
   pages: {
     signIn: "/login",
     newUser: "/onboarding",
@@ -184,9 +118,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     // Runs for every provider, including before a magic link is emailed, so a
     // suspended user can't start a new session by any route.
-    async signIn({ user }) {
-      if (!user.email) return true;
-      return !(await isSuspended(eq(users.email, user.email.toLowerCase())));
+    //
+    // It also runs BEFORE Auth.js creates a user, which makes it the place to
+    // apply new-account admission to Google (type "oidc") and GitHub (type
+    // "oauth") signups: disposable domain, per-network signup limit, and an
+    // established account already owning the mailbox. Returning users pass.
+    // Magic-link and password signups are admitted in src/lib/actions/auth.ts.
+    async signIn({ user, account }) {
+      if (user.email && (await isSuspended(eq(users.email, user.email.toLowerCase())))) {
+        return false;
+      }
+      const refused = await oauthSignupRedirect(db, {
+        email: user.email,
+        account,
+        ip: await getClientIp(),
+      });
+      return refused ?? true;
     },
     // Sessions are JWTs, so there is no session row to delete on suspension.
     // Re-check the account periodically instead; returning null clears the

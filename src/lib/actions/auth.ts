@@ -3,12 +3,28 @@
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
+import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { signIn } from "@/lib/auth";
-import { checkRateLimit, authRateLimit, emailRateLimit } from "@/lib/rate-limit";
-import { sendVerificationEmail } from "@/lib/email";
+import {
+  checkRateLimit,
+  authRateLimit,
+  emailRateLimit,
+  emailIpRateLimit,
+} from "@/lib/rate-limit";
+import { sendExistingAccountNotice, sendVerificationEmail } from "@/lib/email";
 import { generateVerificationToken } from "@/lib/tokens";
+import { getClientIp } from "@/lib/request-ip";
+import { abuseKeyForIp } from "@/lib/ip";
+import { canonicalizeEmail } from "@/lib/email-normalize";
+import { TURNSTILE_FAILED_ERROR, verifyTurnstileToken } from "@/lib/turnstile";
+import {
+  IdentityConflictError,
+  admitNewAccount,
+  claimCanonicalIdentity,
+  type AdmissionRefusal,
+} from "@/lib/signup-admission";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
 
@@ -37,6 +53,34 @@ export type AuthState = {
   success?: string;
 };
 
+const TOO_MANY = "Too many attempts. Please try again later.";
+
+/**
+ * Messages for refused NEW accounts. A duplicate mailbox is deliberately not
+ * listed: telling the requester "an account exists" would turn signup into an
+ * oracle for which addresses have accounts, so that case answers with the
+ * normal "check your email" message and emails the mailbox instead.
+ */
+const REFUSAL_MESSAGES: Record<Exclude<AdmissionRefusal, "duplicate_identity">, string> = {
+  rate_limited: "Too many new accounts from your network. Please try again later.",
+  disposable_domain: "Please use a permanent email address.",
+};
+
+/**
+ * Tell the owner of a mailbox that already has an account, without telling
+ * the requester anything. Throttled per canonical address like every other
+ * auth email.
+ */
+async function noticeExistingAccount(email: string, canonical: string) {
+  const rl = await checkRateLimit(emailRateLimit, `notice:${canonical}`);
+  if (!rl.success) return;
+  try {
+    await sendExistingAccountNotice({ to: email });
+  } catch (error) {
+    console.error("[auth] Failed to send existing-account notice:", error);
+  }
+}
+
 // ─── Register with Email + Password ─────────────────────────────────────────
 
 export async function registerWithPassword(
@@ -54,13 +98,18 @@ export async function registerWithPassword(
   }
 
   const { name, email, password } = parsed.data;
+  // `normalizedEmail` is the login identity, stored as typed (lowercased).
+  // `canonical` is only an abuse key: +tags and Gmail dots removed.
   const normalizedEmail = email.toLowerCase().trim();
+  const canonical = canonicalizeEmail(normalizedEmail);
+  const ip = await getClientIp();
 
-  // Rate limit by email
-  const rl = await checkRateLimit(authRateLimit, `register:${normalizedEmail}`);
-  if (!rl.success) {
-    return { error: "Too many attempts. Please try again later." };
-  }
+  const captcha = await verifyTurnstileToken({
+    token: formData.get("cf-turnstile-response"),
+    remoteIp: ip,
+    action: "register",
+  });
+  if (!captcha.ok) return { error: TURNSTILE_FAILED_ERROR };
 
   const [existingUser] = await db
     .select({ id: users.id, emailVerified: users.emailVerified })
@@ -68,17 +117,44 @@ export async function registerWithPassword(
     .where(eq(users.email, normalizedEmail))
     .limit(1);
 
+  // Admission applies to new addresses only.
+  let duplicateMailbox = false;
+  if (!existingUser) {
+    const verdict = await admitNewAccount(db, { email: normalizedEmail, ip });
+    if (!verdict.ok) {
+      if (verdict.reason !== "duplicate_identity") {
+        return { error: REFUSAL_MESSAGES[verdict.reason] };
+      }
+      duplicateMailbox = true;
+    }
+  }
+
+  // Rate limit by mailbox, so +tag variants share one bucket.
+  const rl = await checkRateLimit(authRateLimit, `register:${canonical}`);
+  if (!rl.success) {
+    return { error: TOO_MANY };
+  }
+
   // Hash password (cost factor 12). Computed before branching so that the
   // response time does not reveal whether the address is already registered.
   const hashedPassword = await bcrypt.hash(password, 12);
 
+  const alreadyRegistered = {
+    success:
+      "Check your email to finish setting up your account. If you already have one, sign in instead.",
+  };
+
   if (existingUser?.emailVerified) {
     // Deliberately the same generic response as the success path: returning
     // "this email already exists" here turns signup into an account oracle.
-    return {
-      success:
-        "Check your email to finish setting up your account. If you already have one, sign in instead.",
-    };
+    return alreadyRegistered;
+  }
+
+  if (duplicateMailbox) {
+    // Same reasoning: another spelling of this mailbox already has an
+    // account. Answer generically and let the mailbox owner know.
+    await noticeExistingAccount(normalizedEmail, canonical);
+    return alreadyRegistered;
   }
 
   if (existingUser) {
@@ -89,21 +165,37 @@ export async function registerWithPassword(
     // earlier token, so only this attempt can be completed.
     await db
       .update(users)
-      .set({ name, password: hashedPassword })
+      .set({ name, password: hashedPassword, emailCanonical: canonical })
       .where(eq(users.id, existingUser.id));
   } else {
-    // Create user (emailVerified is null — must verify before login)
-    await db.insert(users).values({
-      name,
-      email: normalizedEmail,
-      password: hashedPassword,
-      emailVerified: null,
-    });
+    // Create user (emailVerified is null — must verify before login). The
+    // canonical claim makes the duplicate check atomic with the insert; the
+    // row only becomes established when verified, which claims again.
+    try {
+      await db.transaction(async (tx) => {
+        await claimCanonicalIdentity(tx, { canonical });
+        await tx.insert(users).values({
+          name,
+          email: normalizedEmail,
+          password: hashedPassword,
+          emailVerified: null,
+          emailCanonical: canonical,
+          signupMethod: "password",
+          signupIp: ip,
+          signupUserAgent: (await headers()).get("user-agent")?.slice(0, 512) ?? null,
+        });
+      });
+    } catch (error) {
+      if (!(error instanceof IdentityConflictError)) throw error;
+      await noticeExistingAccount(normalizedEmail, canonical);
+      return alreadyRegistered;
+    }
   }
 
   // Generate and send verification email
-  const emailRl = await checkRateLimit(emailRateLimit, `email:${normalizedEmail}`);
-  if (!emailRl.success) {
+  const emailRl = await checkRateLimit(emailRateLimit, `email:${canonical}`);
+  const networkRl = await checkRateLimit(emailIpRateLimit, abuseKeyForIp(ip));
+  if (!emailRl.success || !networkRl.success) {
     return { success: "Check your email to verify your account." };
   }
 
@@ -139,9 +231,14 @@ export async function loginWithPassword(
     return { error: parsed.error.issues[0].message };
   }
 
-  const rl = await checkRateLimit(authRateLimit, `login:${parsed.data.email}`);
+  // Keyed by mailbox: case changes, +tags and Gmail dots used to each get a
+  // fresh bucket. The login itself still uses the exact address.
+  const rl = await checkRateLimit(
+    authRateLimit,
+    `login:${canonicalizeEmail(parsed.data.email)}`,
+  );
   if (!rl.success) {
-    return { error: "Too many attempts. Please try again later." };
+    return { error: TOO_MANY };
   }
 
   try {
@@ -181,10 +278,42 @@ export async function sendMagicLink(
   }
 
   const normalizedEmail = parsed.data.email.toLowerCase().trim();
+  const canonical = canonicalizeEmail(normalizedEmail);
+  const ip = await getClientIp();
+  const checkEmail = { success: "Check your email for a sign-in link." };
 
-  const rl = await checkRateLimit(emailRateLimit, `magic:${normalizedEmail}`);
-  if (!rl.success) {
-    return { error: "Too many attempts. Please try again later." };
+  // A magic link for an unknown address creates an account when clicked, so
+  // this form is a signup surface on the login page too.
+  const captcha = await verifyTurnstileToken({
+    token: formData.get("cf-turnstile-response"),
+    remoteIp: ip,
+    action: "magic_link",
+  });
+  if (!captcha.ok) return { error: TURNSTILE_FAILED_ERROR };
+
+  const [existingUser] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, normalizedEmail))
+    .limit(1);
+
+  if (!existingUser) {
+    const verdict = await admitNewAccount(db, { email: normalizedEmail, ip });
+    if (!verdict.ok) {
+      if (verdict.reason !== "duplicate_identity") {
+        return { error: REFUSAL_MESSAGES[verdict.reason] };
+      }
+      // Another spelling of this mailbox has an account. Answer as usual so
+      // the form reveals nothing, and tell the mailbox owner instead.
+      await noticeExistingAccount(normalizedEmail, canonical);
+      return checkEmail;
+    }
+  }
+
+  const rl = await checkRateLimit(emailRateLimit, `magic:${canonical}`);
+  const networkRl = await checkRateLimit(emailIpRateLimit, abuseKeyForIp(ip));
+  if (!rl.success || !networkRl.success) {
+    return { error: TOO_MANY };
   }
 
   try {
@@ -207,5 +336,5 @@ export async function sendMagicLink(
     return { error: "Unable to send sign-in email. Please try again later." };
   }
 
-  return { success: "Check your email for a sign-in link." };
+  return checkEmail;
 }

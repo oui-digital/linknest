@@ -1,28 +1,71 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import Link from "next/link";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
+import {
+  TurnstileWidget,
+  turnstileSatisfied,
+  type TurnstileHandle,
+} from "@/components/auth/turnstile-widget";
 import {
   sendMagicLink,
   loginWithPassword,
   registerWithPassword,
   type AuthState,
 } from "@/lib/actions/auth";
+import type { TurnstileClientConfig } from "@/lib/turnstile-types";
 
 const initialState: AuthState = {};
 
-export function AuthForm({ mode }: { mode: "login" | "signup" }) {
+type AuthAction = (state: AuthState, formData: FormData) => Promise<AuthState>;
+
+/**
+ * A form action gated by Turnstile. The token lives in state and is rendered
+ * into a hidden cf-turnstile-response field; after every attempt the widget is
+ * reset, because Siteverify accepts each token once and a retry with the old
+ * one would always fail.
+ */
+function useTurnstileAction(action: AuthAction, config: TurnstileClientConfig) {
+  const widget = useRef<TurnstileHandle>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [state, formAction, pending] = useActionState(
+    async (previous: AuthState, formData: FormData) => {
+      try {
+        return await action(previous, formData);
+      } finally {
+        widget.current?.reset();
+      }
+    },
+    initialState,
+  );
+  return {
+    state,
+    formAction,
+    pending,
+    ready: turnstileSatisfied(config, token),
+    field: <input type="hidden" name="cf-turnstile-response" value={token ?? ""} />,
+    widgetProps: { ref: widget, config, onToken: setToken },
+  };
+}
+
+export function AuthForm({
+  mode,
+  turnstile,
+}: {
+  mode: "login" | "signup";
+  turnstile: TurnstileClientConfig;
+}) {
   const [method, setMethod] = useState<"magic-link" | "password">("magic-link");
 
   return (
     <div className="space-y-6">
       {method === "magic-link" ? (
-        <MagicLinkForm />
+        <MagicLinkForm turnstile={turnstile} />
       ) : mode === "login" ? (
         <PasswordLoginForm />
       ) : (
-        <PasswordRegisterForm />
+        <PasswordRegisterForm turnstile={turnstile} />
       )}
 
       <button
@@ -61,8 +104,9 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   );
 }
 
-function MagicLinkForm() {
-  const [state, action, pending] = useActionState(sendMagicLink, initialState);
+function MagicLinkForm({ turnstile }: { turnstile: TurnstileClientConfig }) {
+  const { state, formAction: action, pending, ready, field, widgetProps } =
+    useTurnstileAction(sendMagicLink, turnstile);
 
   if (state.success) {
     return (
@@ -88,12 +132,14 @@ function MagicLinkForm() {
           className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-colors focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
         />
       </div>
+      {field}
+      <TurnstileWidget action="magic_link" {...widgetProps} />
       {state.error && (
         <p className="text-sm text-red-600">{state.error}</p>
       )}
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || !ready}
         className="w-full rounded-lg bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
       >
         {pending ? "Sending link..." : "Send magic link"}
@@ -148,8 +194,9 @@ function PasswordLoginForm() {
   );
 }
 
-function PasswordRegisterForm() {
-  const [state, action, pending] = useActionState(registerWithPassword, initialState);
+function PasswordRegisterForm({ turnstile }: { turnstile: TurnstileClientConfig }) {
+  const { state, formAction: action, pending, ready, field, widgetProps } =
+    useTurnstileAction(registerWithPassword, turnstile);
 
   if (state.success) {
     return (
@@ -204,12 +251,14 @@ function PasswordRegisterForm() {
           className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-colors focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
         />
       </div>
+      {field}
+      <TurnstileWidget action="register" {...widgetProps} />
       {state.error && (
         <p className="text-sm text-red-600">{state.error}</p>
       )}
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || !ready}
         className="w-full rounded-lg bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
       >
         {pending ? "Creating account..." : "Create account"}

@@ -14,6 +14,17 @@ export function createTestDb(): { db: Db; pool: Pool } {
   return { db: drizzle(pool, { schema }) as unknown as Db, pool };
 }
 
+/**
+ * Open several connections up front. Without this, the second of two
+ * "concurrent" transactions can spend its first milliseconds opening a new
+ * connection while the first one commits, and a race test passes without the
+ * two ever overlapping.
+ */
+export async function warmPool(pool: Pool, connections = 4): Promise<void> {
+  const clients = await Promise.all(Array.from({ length: connections }, () => pool.connect()));
+  for (const client of clients) client.release();
+}
+
 export async function truncateAll(db: Db): Promise<void> {
   const result = await db.execute<{ tablename: string }>(
     sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
