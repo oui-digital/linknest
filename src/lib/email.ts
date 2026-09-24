@@ -4,6 +4,16 @@ const EMAILIT_API_KEY = process.env.EMAILIT_API_KEY!;
 const FROM = process.env.EMAIL_FROM || "LinkNest <noreply@linknest.click>";
 const APP_URL = SITE_URL;
 
+/** Escape user-supplied text before it is interpolated into an email body. */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 async function sendEmail({
   to,
   subject,
@@ -109,4 +119,28 @@ export async function sendVerificationEmail({
       </div>
     `,
   });
+}
+
+/**
+ * Operational alert to the site owner (reports, link-farm signals, takedowns).
+ *
+ * Unset ADMIN_ALERT_EMAIL is not an error: the alert is logged instead, so the
+ * signal still reaches the function logs. Callers run this after the response
+ * (or in a try/catch) — an Emailit hiccup must never fail a report or publish.
+ *
+ * Never put ADMIN_API_SECRET in `html`. Curl examples reference the env var.
+ */
+export async function sendAdminAlert({
+  subject,
+  html,
+}: {
+  subject: string;
+  html: string;
+}) {
+  const to = process.env.ADMIN_ALERT_EMAIL;
+  if (!to) {
+    console.warn(`[admin-alert] ADMIN_ALERT_EMAIL is not set. ${subject}`);
+    return;
+  }
+  await sendEmail({ to, subject: `[LinkNest] ${subject}`, html });
 }

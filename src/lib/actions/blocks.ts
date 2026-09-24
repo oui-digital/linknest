@@ -8,7 +8,9 @@ import { blocks, pages } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getUserWorkspace } from "@/lib/queries";
 import { publicPageTag } from "@/lib/cache-tags";
-import { normalizeUrl } from "@/lib/safe-browsing";
+import { checkUrls, normalizeUrl } from "@/lib/safe-browsing";
+import { applyLiveEdit, urlsIntroducedByUpdate } from "@/lib/live-edit";
+import { scheduleLinkFarmCheck } from "@/lib/link-farm-check";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import { getLimit, type PlanId } from "@/lib/entitlements";
 import { type BlockStyleOverrides } from "@/lib/templates/theme";
@@ -134,38 +136,60 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
   const contentResult = normalizeContent(parsed.data.content);
   if ("error" in contentResult) return { error: contentResult.error };
 
-  // Gate: Block count limit
-  const [blockCount] = await db
-    .select({ count: sql<number>`COUNT(*)` })
-    .from(blocks)
-    .where(eq(blocks.pageId, page.id));
   const limit = getLimit(workspace.plan as PlanId, "max_blocks_per_page");
-  if ((blockCount?.count ?? 0) >= limit) {
-    return { error: `Block limit reached (${limit}). Upgrade to Pro for more.` };
+
+  // Scanned first when the page is live, then written under the page row lock
+  // (src/lib/live-edit.ts). The count and position reads happen under that
+  // lock too, so two concurrent creates can no longer both pass the limit or
+  // take the same position.
+  const outcome = await applyLiveEdit(db, {
+    pageId: page.id,
+    introducedUrls: normalizedUrl ? [normalizedUrl] : [],
+    checkUrls,
+    write: async (tx) => {
+      const [blockCount] = await tx
+        .select({ count: sql<number>`COUNT(*)`.mapWith(Number) })
+        .from(blocks)
+        .where(eq(blocks.pageId, page.id));
+      if ((blockCount?.count ?? 0) >= limit) {
+        return { error: `Block limit reached (${limit}). Upgrade to Pro for more.` };
+      }
+
+      const [maxPos] = await tx
+        .select({
+          max: sql<number>`COALESCE(MAX(${blocks.position}), -1)`.mapWith(Number),
+        })
+        .from(blocks)
+        .where(eq(blocks.pageId, page.id));
+
+      const [created] = await tx
+        .insert(blocks)
+        .values({
+          pageId: page.id,
+          type: parsed.data.type,
+          position: (maxPos?.max ?? -1) + 1,
+          label: parsed.data.label ?? null,
+          url: normalizedUrl,
+          content: contentResult.content,
+        })
+        .returning();
+      return created;
+    },
+  });
+
+  if (!outcome.ok) {
+    return outcome.flaggedUrls
+      ? { error: outcome.error, flaggedUrls: outcome.flaggedUrls }
+      : { error: outcome.error };
   }
-
-  // Get the next position
-  const [maxPos] = await db
-    .select({ max: sql<number>`COALESCE(MAX(${blocks.position}), -1)` })
-    .from(blocks)
-    .where(eq(blocks.pageId, page.id));
-
-  const [block] = await db
-    .insert(blocks)
-    .values({
-      pageId: page.id,
-      type: parsed.data.type,
-      position: (maxPos?.max ?? -1) + 1,
-      label: parsed.data.label ?? null,
-      url: normalizedUrl,
-      content: contentResult.content,
-    })
-    .returning();
 
   revalidatePath(`/${page.slug}`);
   revalidateTag(publicPageTag(page.slug), "max");
+  if (outcome.isPublished && normalizedUrl && parsed.data.type === "link") {
+    scheduleLinkFarmCheck(page.id);
+  }
 
-  return { block };
+  return { block: outcome.value };
 }
 
 // ─── Update Block ───────────────────────────────────────────────────────────
@@ -184,9 +208,15 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
     return { error: "Invalid input" };
   }
 
-  // Verify ownership through the block's page
+  // Verify ownership through the block's page. url/isVisible/type are read so
+  // we know whether this edit puts a new link in front of visitors.
   const [block] = await db
-    .select({ pageId: blocks.pageId })
+    .select({
+      pageId: blocks.pageId,
+      type: blocks.type,
+      url: blocks.url,
+      isVisible: blocks.isVisible,
+    })
     .from(blocks)
     .where(eq(blocks.id, parsed.data.id))
     .limit(1);
@@ -232,16 +262,38 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
   if (parsed.data.isVisible !== undefined)
     updates.isVisible = parsed.data.isVisible;
 
-  const [updated] = await db
-    .update(blocks)
-    .set(updates)
-    .where(eq(blocks.id, parsed.data.id))
-    .returning();
+  const introducedUrls = urlsIntroducedByUpdate(block, {
+    url: parsed.data.url !== undefined ? normalizedUrl : undefined,
+    isVisible: parsed.data.isVisible,
+  });
+
+  const outcome = await applyLiveEdit(db, {
+    pageId: page.id,
+    introducedUrls,
+    checkUrls,
+    write: async (tx) => {
+      const [updated] = await tx
+        .update(blocks)
+        .set(updates)
+        .where(eq(blocks.id, parsed.data.id))
+        .returning();
+      return updated;
+    },
+  });
+
+  if (!outcome.ok) {
+    return outcome.flaggedUrls
+      ? { error: outcome.error, flaggedUrls: outcome.flaggedUrls }
+      : { error: outcome.error };
+  }
 
   revalidatePath(`/${page.slug}`);
   revalidateTag(publicPageTag(page.slug), "max");
+  if (outcome.isPublished && introducedUrls.length > 0 && block.type === "link") {
+    scheduleLinkFarmCheck(page.id);
+  }
 
-  return { block: updated };
+  return { block: outcome.value };
 }
 
 // ─── Delete Block ───────────────────────────────────────────────────────────
@@ -270,7 +322,18 @@ export async function deleteBlock(blockId: string) {
     return { error: "Unauthorized" };
   }
 
-  await db.delete(blocks).where(eq(blocks.id, blockId));
+  // Through the shared protocol so the content version moves: a publish that
+  // scanned before this delete re-reads the page instead of trusting the scan.
+  const outcome = await applyLiveEdit(db, {
+    pageId: block.pageId,
+    introducedUrls: [],
+    checkUrls,
+    write: async (tx) => {
+      await tx.delete(blocks).where(eq(blocks.id, blockId));
+      return true;
+    },
+  });
+  if (!outcome.ok) return { error: outcome.error };
 
   revalidatePath(`/${result.page.slug}`);
   revalidateTag(publicPageTag(result.page.slug), "max");

@@ -19,6 +19,7 @@ import {
 } from "@/lib/queries";
 import { publicPageTag } from "@/lib/cache-tags";
 import { SITE_URL } from "@/lib/site";
+import { isInIndexProbation } from "@/lib/indexing";
 
 interface Props {
   params: Promise<{ username: string }>;
@@ -101,7 +102,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return { title: "Not Found", robots: { index: false, follow: false } };
   }
 
-  const { page } = result;
+  const { page, plan } = result;
   const title = page.seoTitle || page.title;
   const description =
     page.seoDescription || page.bio || `${page.title} — LinkNest`;
@@ -124,6 +125,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title,
       description,
     },
+    // New free pages are kept out of search for their first weeks (see
+    // src/lib/indexing.ts). Evaluated per request, so it lifts on its own.
+    ...(isInIndexProbation({ plan, firstPublishedAt: page.firstPublishedAt })
+      ? { robots: { index: false, follow: false } }
+      : {}),
   };
 }
 

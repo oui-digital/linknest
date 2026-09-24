@@ -125,7 +125,17 @@ export const pages = pgTable(
     seoTitle: varchar("seo_title", { length: 70 }),
     seoDescription: varchar("seo_description", { length: 160 }),
     isPublished: boolean("is_published").default(false).notNull(),
-    publishedAt: timestamp("published_at", { mode: "date" }),
+    publishedAt: timestamp("published_at", { mode: "date" }), // reset on every publish
+    // Set once, on the first publish, and never changed. The search-indexing
+    // probation (src/lib/indexing.ts) counts from here: createdAt would let a
+    // spammer age drafts before publishing, and publishedAt resets whenever a
+    // legitimate owner republishes. Age is only a delay — live edits to an
+    // indexed page are still scanned (see src/lib/live-edit.ts).
+    firstPublishedAt: timestamp("first_published_at", { mode: "date" }),
+    // Bumped by every block mutation that can change what a visitor sees.
+    // publishPage scans links outside its transaction, then re-reads this under
+    // the page row lock: if it moved, the scan is stale and publish retries.
+    contentVersion: integer("content_version").default(0).notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },

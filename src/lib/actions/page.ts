@@ -5,16 +5,13 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import {
-  pages,
-  blocks,
-  pendingUrlScans,
-  pageModerationLog,
-} from "@/lib/db/schema";
+import { pages, pageModerationLog } from "@/lib/db/schema";
 import { eq, and, or, desc } from "drizzle-orm";
 import { getUserWorkspace } from "@/lib/queries";
 import { publicPageTag } from "@/lib/cache-tags";
 import { checkUrls } from "@/lib/safe-browsing";
+import { publishPageCore } from "@/lib/publish";
+import { scheduleLinkFarmCheck } from "@/lib/link-farm-check";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import {
@@ -358,51 +355,22 @@ export async function publishPage(pageId: string) {
     return { error: MODERATION_BLOCKED_ERROR };
   }
 
-  // Collect all outbound URLs from the page's blocks
-  const pageBlocks = await db
-    .select({ url: blocks.url })
-    .from(blocks)
-    .where(eq(blocks.pageId, pageId));
-
-  const urls = pageBlocks
-    .map((b) => b.url)
-    .filter((u): u is string => Boolean(u));
-
-  // Check URLs against Google Safe Browsing
-  if (urls.length > 0) {
-    const result = await checkUrls(urls);
-
-    if (!result.safe) {
-      return {
-        error: `Cannot publish: ${result.flaggedUrls.length} URL(s) flagged as unsafe. Remove or replace them to publish.`,
-        flaggedUrls: result.flaggedUrls,
-      };
-    }
-
-    // If the check timed out (fail-open), queue URLs for background rescan
-    if (result.timedOut) {
-      await db.insert(pendingUrlScans).values(
-        urls.map((url) => ({ pageId, url })),
-      );
-    }
-  }
-
   try {
-    const [updated] = await db
-      .update(pages)
-      .set({
-        isPublished: true,
-        publishedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(pages.id, pageId))
-      .returning();
+    // Scans every link, then publishes only if nothing changed since the scan
+    // (see src/lib/live-edit.ts for why that check is needed).
+    const result = await publishPageCore(db, pageId, { checkUrls });
+    if (!result.ok) {
+      return result.flaggedUrls
+        ? { error: result.error, flaggedUrls: result.flaggedUrls }
+        : { error: result.error };
+    }
 
     // Revalidate the public page cache (use internal path without @)
     revalidatePath(`/${page.slug}`);
     revalidateTag(publicPageTag(page.slug), "max");
+    scheduleLinkFarmCheck(pageId);
 
-    return { page: updated };
+    return { page: result.page };
   } catch (error) {
     // Publishing is the single most important action in the product, and an
     // exception here previously reached the user as a bare "Something went
