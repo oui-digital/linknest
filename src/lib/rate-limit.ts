@@ -49,6 +49,31 @@ export const mutationRateLimit = redis
     })
   : null;
 
+/**
+ * Report limiter: 3 reports per day per reporter abuse key (an IPv4 address or
+ * an IPv6 /64, see src/lib/ip.ts). Atomic, unlike counting page_reports rows,
+ * which two concurrent requests could both pass.
+ */
+export const reportRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(3, "1 d"),
+      prefix: "rl:report",
+    })
+  : null;
+
+/**
+ * Alert throttle: at most one "page reported" email per page per day. A
+ * takedown always alerts regardless.
+ */
+export const alertDedupeRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(1, "1 d"),
+      prefix: "rl:alert",
+    })
+  : null;
+
 // Missing rate-limit config used to silently disable every limiter with no
 // signal at all — one absent env var removed a security control invisibly.
 if (!redis && process.env.NODE_ENV === "production") {

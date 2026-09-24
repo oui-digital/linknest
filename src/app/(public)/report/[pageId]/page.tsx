@@ -1,4 +1,5 @@
 import { ReportForm } from "./report-form";
+import { getTurnstileClientConfig } from "@/lib/turnstile";
 
 interface Props {
   params: Promise<{ pageId: string }>;
@@ -15,7 +16,7 @@ export default async function ReportPage({ params }: Props) {
           If you believe this page contains harmful or inappropriate content,
           please let us know.
         </p>
-        <ReportForm pageId={pageId} />
+        <ReportForm pageId={pageId} turnstile={getTurnstileClientConfig()} />
       </div>
     </div>
   );

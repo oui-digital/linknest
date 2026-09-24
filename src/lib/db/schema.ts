@@ -266,6 +266,17 @@ export const pageReports = pgTable(
       .references(() => pages.id, { onDelete: "cascade" })
       .notNull(),
     reporterIp: varchar("reporter_ip", { length: 45 }).notNull(),
+    // Who counts as one reporter: abuseKeyForIp(reporter_ip), which collapses
+    // an IPv6 /64 (src/lib/ip.ts). Nullable only until
+    // scripts/backfill-reporter-key.ts has filled historical rows; every new
+    // report writes it. Making it NOT NULL is a separate, later deploy — a
+    // push that adds the constraint while NULLs exist would truncate.
+    reporterKey: varchar("reporter_key", { length: 64 }),
+    // The page's review epoch when this report was filed: the seq of its
+    // latest reinstatement, or 0. Assigned under the page row lock, so a
+    // report that raced a reinstatement lands in the new epoch. Reports are
+    // deduplicated and counted per epoch; timestamps only bound the 24h window.
+    reviewEpoch: bigint("review_epoch", { mode: "number" }).default(0).notNull(),
     reason: varchar("reason", { length: 30 }).notNull(), // 'phishing' | 'malware' | 'spam' | 'other'
     details: text("details"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
@@ -273,6 +284,7 @@ export const pageReports = pgTable(
   (table) => [
     index("page_reports_page_id_idx").on(table.pageId),
     index("page_reports_created_at_idx").on(table.createdAt),
+    index("page_reports_page_epoch_idx").on(table.pageId, table.reviewEpoch, table.reporterKey),
   ],
 );
 

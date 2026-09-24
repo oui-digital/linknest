@@ -41,7 +41,9 @@ export async function listReportedPages(
   db: Db,
   { since, limit = 200 }: { since: Date; limit?: number },
 ): Promise<ReportedPage[]> {
-  const distinctReporters = sql<number>`count(distinct ${pageReports.reporterIp})`;
+  // reporter_key groups an IPv6 /64 as one reporter; rows filed before the
+  // backfill fall back to their raw IP.
+  const distinctReporters = sql<number>`count(distinct coalesce(${pageReports.reporterKey}, ${pageReports.reporterIp}))`;
   const grouped = await db
     .select({
       pageId: pageReports.pageId,

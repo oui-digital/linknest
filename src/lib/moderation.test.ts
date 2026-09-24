@@ -4,6 +4,8 @@ import {
   currentReviewEpoch,
   isBlockedByModeration,
   moderationBlockMessage,
+  shouldAutoTakedown,
+  REPORT_TAKEDOWN_THRESHOLD,
   MODERATION_BLOCKED_ERROR,
   REPORTS_BLOCKED_ERROR,
   type ModerationEntry,
@@ -110,5 +112,29 @@ describe("currentReviewEpoch", () => {
     const r1 = reinstate("all");
     const r2 = reinstate("user_reports");
     expect(currentReviewEpoch([r2, takedown("manual_review"), r1])).toBe(r2.seq);
+  });
+});
+
+describe("shouldAutoTakedown", () => {
+  const base = { enabled: true, isPublished: true, plan: "free", distinctReporters: REPORT_TAKEDOWN_THRESHOLD };
+
+  it("takes down a live free page at the threshold", () => {
+    expect(shouldAutoTakedown(base)).toBe(true);
+  });
+
+  it("does nothing below the threshold", () => {
+    expect(shouldAutoTakedown({ ...base, distinctReporters: REPORT_TAKEDOWN_THRESHOLD - 1 })).toBe(false);
+  });
+
+  it("does nothing while the rollout flag is off", () => {
+    expect(shouldAutoTakedown({ ...base, enabled: false })).toBe(false);
+  });
+
+  it("never auto-removes a Pro page", () => {
+    expect(shouldAutoTakedown({ ...base, plan: "pro", distinctReporters: 50 })).toBe(false);
+  });
+
+  it("ignores drafts", () => {
+    expect(shouldAutoTakedown({ ...base, isPublished: false })).toBe(false);
   });
 });

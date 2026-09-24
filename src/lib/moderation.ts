@@ -87,3 +87,31 @@ export function currentReviewEpoch(entries: readonly ModerationEntry[]): number 
   }
   return epoch;
 }
+
+/** Distinct reporters (abuse keys) in one epoch and 24 hours before a takedown. */
+export const REPORT_TAKEDOWN_THRESHOLD = 3;
+
+/**
+ * Whether reports alone take a page down. Behind MODERATION_AUTO_TAKEDOWN so
+ * it is switched on only after admin reinstatement and alerts have been
+ * exercised in production. Pro pages are never taken down automatically —
+ * three reporters are cheap for a competitor; they alert instead.
+ */
+export function shouldAutoTakedown({
+  enabled,
+  isPublished,
+  plan,
+  distinctReporters,
+}: {
+  enabled: boolean;
+  isPublished: boolean;
+  plan: string;
+  distinctReporters: number;
+}): boolean {
+  return (
+    enabled &&
+    isPublished &&
+    plan !== "pro" &&
+    distinctReporters >= REPORT_TAKEDOWN_THRESHOLD
+  );
+}

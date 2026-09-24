@@ -110,6 +110,14 @@ curl "$SITE/api/admin/reports?days=7" -H "Authorization: Bearer $ADMIN_API_SECRE
 
 Commands: `takedown_page` / `reinstate_page` (`pageId` or `slug`; reinstate
 needs `reasonCode`), `suspend_user` / `reinstate_user` (`userId` or `email`).
+
+Reports (`/api/report`) need a Turnstile token when `TURNSTILE_ENABLED=true`.
+One reporter is an abuse key: an IPv4 address or an IPv6 /64
+(`src/lib/ip.ts`). Each report is stored with the page's review epoch (the
+`seq` of its latest reinstatement), assigned under the page lock; a reporter
+counts once per epoch. With `MODERATION_AUTO_TAKEDOWN=true`, three distinct
+reporters in one epoch within 24 hours place a `user_reports` hold on a free
+page. Pro pages only alert.
 Suspending holds every page the user *owns* and drops their session within five
 minutes; reinstating lifts only the suspension hold and never republishes.
 Alerts go to `ADMIN_ALERT_EMAIL`.

@@ -1,6 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import {
+  TurnstileWidget,
+  turnstileSatisfied,
+  type TurnstileHandle,
+} from "@/components/auth/turnstile-widget";
+import type { TurnstileClientConfig } from "@/lib/turnstile-types";
 
 const REASONS = [
   { value: "phishing", label: "Phishing / Scam" },
@@ -9,8 +15,16 @@ const REASONS = [
   { value: "other", label: "Other" },
 ];
 
-export function ReportForm({ pageId }: { pageId: string }) {
+export function ReportForm({
+  pageId,
+  turnstile,
+}: {
+  pageId: string;
+  turnstile: TurnstileClientConfig;
+}) {
   const [reason, setReason] = useState("");
+  const [token, setToken] = useState<string | null>(null);
+  const widget = useRef<TurnstileHandle>(null);
   const [details, setDetails] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">(
     "idle",
@@ -26,7 +40,7 @@ export function ReportForm({ pageId }: { pageId: string }) {
       const res = await fetch("/api/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId, reason, details }),
+        body: JSON.stringify({ pageId, reason, details, turnstileToken: token }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -38,6 +52,9 @@ export function ReportForm({ pageId }: { pageId: string }) {
     } catch {
       setErrorMsg("Network error. Please try again.");
       setStatus("error");
+    } finally {
+      // Turnstile tokens are single-use: a retry needs a fresh one.
+      widget.current?.reset();
     }
   };
 
@@ -84,13 +101,15 @@ export function ReportForm({ pageId }: { pageId: string }) {
         />
       </div>
 
+      <TurnstileWidget ref={widget} config={turnstile} action="report" onToken={setToken} />
+
       {status === "error" && (
         <p className="text-sm text-red-600">{errorMsg}</p>
       )}
 
       <button
         type="submit"
-        disabled={!reason || status === "sending"}
+        disabled={!reason || status === "sending" || !turnstileSatisfied(turnstile, token)}
         className="w-full rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
       >
         {status === "sending" ? "Submitting..." : "Submit Report"}
