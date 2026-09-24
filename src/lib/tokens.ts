@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { verificationTokens } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gt } from "drizzle-orm";
 import type { DbOrTx } from "@/lib/db/types";
 
 /**
@@ -30,30 +30,25 @@ export async function generateVerificationToken(email: string, executor: DbOrTx 
   return created;
 }
 
-export async function verifyToken(email: string, token: string) {
-  const [existing] = await db
-    .select()
-    .from(verificationTokens)
-    .where(
-      and(
-        eq(verificationTokens.identifier, email),
-        eq(verificationTokens.token, token),
-      ),
-    )
-    .limit(1);
-
-  if (!existing) return null;
-  if (existing.expires < new Date()) return null;
-
-  // Delete the token (one-time use)
-  await db
+/**
+ * Spend a verification token: delete it if it matches and has not expired,
+ * and report whether it did. Run it in the transaction that acts on it, so
+ * the check and the action cannot be separated.
+ */
+export async function consumeVerificationToken(
+  executor: DbOrTx,
+  email: string,
+  token: string,
+): Promise<boolean> {
+  const consumed = await executor
     .delete(verificationTokens)
     .where(
       and(
         eq(verificationTokens.identifier, email),
         eq(verificationTokens.token, token),
+        gt(verificationTokens.expires, new Date()),
       ),
-    );
-
-  return existing;
+    )
+    .returning({ token: verificationTokens.token });
+  return consumed.length > 0;
 }

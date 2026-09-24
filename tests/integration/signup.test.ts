@@ -10,6 +10,7 @@ import {
   type AdmissionDeps,
 } from "@/lib/signup-admission";
 import { canonicalizeEmail } from "@/lib/email-normalize";
+import { generateVerificationToken } from "@/lib/tokens";
 import { createTestDb, seedUser, truncateAll, warmPool } from "./helpers";
 
 const { db, pool } = createTestDb();
@@ -25,6 +26,10 @@ const allowAll: AdmissionDeps = {
 };
 const google = (id: string) => ({ type: "oidc", provider: "google", providerAccountId: id });
 const github = (id: string) => ({ type: "oauth", provider: "github", providerAccountId: id });
+
+async function issueToken(email: string) {
+  return (await generateVerificationToken(email, db)).token;
+}
 
 function oauthAccount(userId: string, provider = "google", id = `${provider}-${userId}`): AdapterAccount {
   return { userId, type: provider === "google" ? "oidc" : "oauth", provider, providerAccountId: id } as AdapterAccount;
@@ -205,18 +210,39 @@ describe("activation of an existing unverified row", () => {
   it("password verification lets exactly one of two concurrent aliases through", async () => {
     await seedUser(db, { email: "some.one@gmail.com", password: "h1" });
     await seedUser(db, { email: "someone+x@gmail.com", password: "h2" });
-    const results = await Promise.all([
-      activateVerifiedEmail(db, "some.one@gmail.com"),
-      activateVerifiedEmail(db, "someone+x@gmail.com"),
-    ]);
+    const results = await Promise.all(
+      ["some.one@gmail.com", "someone+x@gmail.com"].map(async (email) =>
+        activateVerifiedEmail(db, { email, token: await issueToken(email) }),
+      ),
+    );
     expect(results.sort()).toEqual(["conflict", "ok"]);
   });
 
   it("re-verifying an established account is not a conflict", async () => {
     await established("someone@gmail.com");
     await established("some.one@gmail.com");
-    expect(await activateVerifiedEmail(db, "some.one@gmail.com")).toBe("ok");
-    expect(await activateVerifiedEmail(db, "nobody@example.test")).toBe("not_found");
+    const token = await issueToken("some.one@gmail.com");
+    expect(await activateVerifiedEmail(db, { email: "some.one@gmail.com", token })).toBe("ok");
+    const orphanToken = await issueToken("nobody@example.test");
+    expect(await activateVerifiedEmail(db, { email: "nobody@example.test", token: orphanToken })).toBe(
+      "not_found",
+    );
+  });
+
+  it("spends the token: a link works once, and a wrong or expired token activates nothing", async () => {
+    const user = await seedUser(db, { email: "fresh@example.test", password: "h" });
+    const token = await issueToken(user.email);
+
+    expect(await activateVerifiedEmail(db, { email: user.email, token: "wrong" })).toBe("invalid_token");
+    expect(await activateVerifiedEmail(db, { email: user.email, token })).toBe("ok");
+    expect(await activateVerifiedEmail(db, { email: user.email, token })).toBe("invalid_token");
+
+    const late = await seedUser(db, { email: "late@example.test", password: "h" });
+    const lateToken = await issueToken(late.email);
+    await db.execute(sql`UPDATE verification_tokens SET expires = now() - interval '1 minute'`);
+    expect(await activateVerifiedEmail(db, { email: late.email, token: lateToken })).toBe("invalid_token");
+    const [row] = await db.select().from(users).where(eq(users.id, late.id));
+    expect(row.emailVerified).toBeNull();
   });
 });
 
