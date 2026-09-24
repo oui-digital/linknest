@@ -157,22 +157,42 @@ export async function registerWithPassword(
     return alreadyRegistered;
   }
 
+  // The credentials and the token that verifies them are written together,
+  // so the only live token always belongs to the attempt whose password is
+  // stored. A later attempt deletes the earlier token in the same write.
+  let token: string;
   if (existingUser) {
     // The row exists but was never verified, so nobody has proven ownership of
     // this mailbox yet. Let the latest attempt replace the pending credentials
     // — otherwise whoever submitted the form first permanently locks the real
-    // owner out of password signup. generateVerificationToken() invalidates the
-    // earlier token, so only this attempt can be completed.
-    await db
-      .update(users)
-      .set({ name, password: hashedPassword, emailCanonical: canonical })
-      .where(eq(users.id, existingUser.id));
+    // owner out of password signup.
+    //
+    // The row was read before hashing, unlocked. Re-check it under the row
+    // lock that activation (magic link, OAuth, verify link) also takes: if the
+    // owner activated it meanwhile, the activation discarded any pending
+    // password, and writing ours now would arm a password nobody verified.
+    const issued = await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({ emailVerified: users.emailVerified })
+        .from(users)
+        .where(eq(users.id, existingUser.id))
+        .for("update");
+      if (!current || current.emailVerified) return null;
+
+      await tx
+        .update(users)
+        .set({ name, password: hashedPassword, emailCanonical: canonical })
+        .where(eq(users.id, existingUser.id));
+      return generateVerificationToken(normalizedEmail, tx);
+    });
+    if (!issued) return alreadyRegistered;
+    token = issued.token;
   } else {
     // Create user (emailVerified is null — must verify before login). The
     // canonical claim makes the duplicate check atomic with the insert; the
     // row only becomes established when verified, which claims again.
     try {
-      await db.transaction(async (tx) => {
+      const issued = await db.transaction(async (tx) => {
         await claimCanonicalIdentity(tx, { canonical });
         await tx.insert(users).values({
           name,
@@ -184,7 +204,9 @@ export async function registerWithPassword(
           signupIp: ip,
           signupUserAgent: (await headers()).get("user-agent")?.slice(0, 512) ?? null,
         });
+        return generateVerificationToken(normalizedEmail, tx);
       });
+      token = issued.token;
     } catch (error) {
       if (!(error instanceof IdentityConflictError)) throw error;
       await noticeExistingAccount(normalizedEmail, canonical);
@@ -192,7 +214,8 @@ export async function registerWithPassword(
     }
   }
 
-  // Generate and send verification email
+  // Send the verification email. Throttled sends leave the token unsent,
+  // which is harmless: nobody else can know it.
   const emailRl = await checkRateLimit(emailRateLimit, `email:${canonical}`);
   const networkRl = await checkRateLimit(emailIpRateLimit, abuseKeyForIp(ip));
   if (!emailRl.success || !networkRl.success) {
@@ -200,8 +223,7 @@ export async function registerWithPassword(
   }
 
   try {
-    const token = await generateVerificationToken(normalizedEmail);
-    await sendVerificationEmail({ to: normalizedEmail, token: token.token });
+    await sendVerificationEmail({ to: normalizedEmail, token });
   } catch (error) {
     // The user row is already committed. Without this catch the action throws,
     // the account exists but is unverifiable, and re-registering is the only
