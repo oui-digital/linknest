@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { z } from "zod";
 import * as Sentry from "@sentry/nextjs";
 import { db } from "@/lib/db";
 import { pageReports } from "@/lib/db/schema";
@@ -16,6 +17,17 @@ import { getPublicPageUrl } from "@/lib/slugs";
 
 const VALID_REASONS = ["phishing", "malware", "spam", "other"] as const;
 const DAILY_REPORTS_PER_REPORTER = 3;
+
+// Any valid JSON parses, including null, arrays and strings, so the shape is
+// checked before anything is read from it.
+const reportBodySchema = z.object({
+  pageId: z.string(),
+  reason: z.string(),
+  details: z.unknown().optional(),
+  turnstileToken: z.unknown().optional(),
+});
+// Postgres rejects ids that a loose hex-and-dashes pattern lets through.
+const pageIdSchema = z.uuid();
 
 export async function POST(request: NextRequest) {
   // Require a JSON content type. request.json() parses any body, which made
@@ -44,24 +56,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  let body: {
-    pageId?: unknown;
-    reason?: unknown;
-    details?: unknown;
-    turnstileToken?: unknown;
-  };
+  let json: unknown;
   try {
-    body = await request.json();
+    json = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  const { pageId, reason, details, turnstileToken } = body;
-
-  if (typeof pageId !== "string" || typeof reason !== "string") {
+  const body = reportBodySchema.safeParse(json);
+  if (!body.success) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
-  if (!/^[0-9a-f-]{36}$/i.test(pageId)) {
+  const { pageId, reason, details, turnstileToken } = body.data;
+
+  if (!pageIdSchema.safeParse(pageId).success) {
     return NextResponse.json({ error: "Page not found" }, { status: 404 });
   }
   if (!VALID_REASONS.includes(reason as (typeof VALID_REASONS)[number])) {
