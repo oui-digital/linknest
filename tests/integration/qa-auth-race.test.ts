@@ -1,9 +1,11 @@
 import { afterAll, beforeEach, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { NextRequest } from "next/server";
 
 const control = vi.hoisted(() => ({
   afterLookup: undefined as (() => Promise<void>) | undefined,
+  beforeActivationLock: undefined as (() => Promise<void>) | undefined,
   closeDb: undefined as (() => Promise<void>) | undefined,
 }));
 
@@ -25,6 +27,20 @@ vi.mock("@/lib/email", () => ({
   sendExistingAccountNotice: vi.fn(),
   sendVerificationEmail: vi.fn(),
 }));
+// The verify route passes no hooks; inject the test-only one that runs just
+// before activation takes the user row lock. Everything else is the real code.
+vi.mock("@/lib/signup-admission", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/signup-admission")>(
+    "@/lib/signup-admission",
+  );
+  return {
+    ...actual,
+    activateVerifiedEmail: (...[db, input]: Parameters<typeof actual.activateVerifiedEmail>) =>
+      actual.activateVerifiedEmail(db, input, {
+        beforeLock: async () => control.beforeActivationLock?.(),
+      }),
+  };
+});
 vi.mock("bcryptjs", async () => {
   const actual = await vi.importActual<typeof import("bcryptjs")>("bcryptjs");
   return {
@@ -43,10 +59,13 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { registerWithPassword } from "@/lib/actions/auth";
 import { createAuthAdapter } from "@/lib/auth-adapter";
+import { generateVerificationToken } from "@/lib/tokens";
+import { GET as verifyEmail } from "@/app/api/auth/verify-email/route";
 import { seedUser, truncateAll } from "./helpers";
 
 beforeEach(async () => {
   control.afterLookup = undefined;
+  control.beforeActivationLock = undefined;
   await truncateAll(db);
 });
 afterAll(async () => { await control.closeDb?.(); });
@@ -77,4 +96,35 @@ it("registration cannot install a password after a concurrent magic-link activat
     ? await bcrypt.compare("qa-stranger-chosen-password", saved.password)
     : false;
   expect(strangerPasswordWorks).toBe(false);
+});
+
+it("a validated verification link cannot activate credentials replaced before activation", async () => {
+  const user = await seedUser(db, {
+    email: "qa-verification-owner@example.test",
+    emailCanonical: "qa-verification-owner@example.test",
+    password: await bcrypt.hash("qa-owner-original-password", 12),
+  });
+  const originalToken = await generateVerificationToken(user.email);
+
+  // The owner has clicked their real link. A registration commits a
+  // replacement password/token before the route acquires its user lock to
+  // mark the account verified. Neither validation nor writes are mocked.
+  control.beforeActivationLock = async () => {
+    const form = new FormData();
+    form.set("email", user.email);
+    form.set("name", "QA concurrent registration");
+    form.set("password", "qa-unverified-replacement-password");
+    await registerWithPassword({}, form);
+  };
+
+  const query = new URLSearchParams({ email: user.email, token: originalToken.token });
+  const res = await verifyEmail(new NextRequest(`http://localhost/api/auth/verify-email?${query}`));
+
+  // The registration spent the owner's token, so the old link activates nothing.
+  expect(res.headers.get("location")).toContain("error=expired-token");
+
+  const [saved] = await db.select().from(users).where(eq(users.id, user.id));
+  const replacementActivated = Boolean(saved.emailVerified && saved.password)
+    && await bcrypt.compare("qa-unverified-replacement-password", saved.password!);
+  expect(replacementActivated).toBe(false);
 });

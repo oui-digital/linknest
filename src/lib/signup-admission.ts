@@ -5,6 +5,7 @@ import { canonicalizeEmail, getEmailDomain } from "@/lib/email-normalize";
 import { isDisposableEmailDomain } from "@/lib/disposable-email";
 import { abuseKeyForIp } from "@/lib/ip";
 import { checkRateLimit, signupIpRateLimit } from "@/lib/rate-limit";
+import { consumeVerificationToken } from "@/lib/tokens";
 
 /**
  * New-account admission and the one-account-per-mailbox rule.
@@ -180,13 +181,34 @@ export async function oauthSignupRedirect(
   return verdict.ok ? null : `/login?error=signup_blocked&reason=${verdict.reason}`;
 }
 
-export type ActivationResult = "ok" | "not_found" | "conflict";
+export type ActivationResult = "ok" | "invalid_token" | "not_found" | "conflict";
+
+export type ActivationHooks = {
+  /** Test-only: runs before the user row is locked. */
+  beforeLock?: () => Promise<void>;
+};
 
 /**
- * Mark a password signup's address verified (the verify-email link), unless
- * another established account already owns the mailbox.
+ * Complete a password signup from its verify-email link: spend the token and
+ * mark the address verified, unless another established account already owns
+ * the mailbox.
+ *
+ * Everything happens in one transaction under the user row lock.
+ * Registration replaces pending credentials, and the token issued with them,
+ * under the same lock, so the token spent here always belongs to the
+ * password being activated: a registration that commits first has already
+ * deleted this token, and one that commits later finds the row verified and
+ * backs off. Checking the token before taking the lock left a window in which
+ * a registration could swap the password under an already-checked link.
  */
-export async function activateVerifiedEmail(db: Db, email: string): Promise<ActivationResult> {
+export async function activateVerifiedEmail(
+  db: Db,
+  { email, token }: { email: string; token: string },
+  hooks?: ActivationHooks,
+): Promise<ActivationResult> {
+  const address = email.trim().toLowerCase();
+  await hooks?.beforeLock?.();
+
   return db.transaction(async (tx) => {
     const [user] = await tx
       .select({
@@ -196,8 +218,10 @@ export async function activateVerifiedEmail(db: Db, email: string): Promise<Acti
         emailCanonical: users.emailCanonical,
       })
       .from(users)
-      .where(eq(users.email, email.trim().toLowerCase()))
+      .where(eq(users.email, address))
       .for("update");
+
+    if (!(await consumeVerificationToken(tx, address, token))) return "invalid_token";
     if (!user) return "not_found";
 
     const canonical = user.emailCanonical ?? canonicalizeEmail(user.email);
