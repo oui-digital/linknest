@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { blocks, pages, pendingUrlScans } from "@/lib/db/schema";
-import { applyLiveEdit } from "@/lib/live-edit";
+import { applyBlockUpdate, applyLiveEdit } from "@/lib/live-edit";
 import { publishPageCore, PUBLISH_STALE_ERROR } from "@/lib/publish";
 import {
   createTestDb,
@@ -204,5 +204,83 @@ describe("first publication", () => {
 
     const again = await publishPageCore(db, page.id, { checkUrls: fakeCheckUrls() });
     expect(again.ok && again.page.firstPublishedAt?.toISOString()).toBe(old.toISOString());
+  });
+});
+
+describe("concurrent edits to one block (two connections)", () => {
+  it("a hidden-URL swap that read the block before it was shown rescans", async () => {
+    const { page } = await seedOwnedPage(db, { isPublished: true, links: [GOOD] });
+    const [block] = await db
+      .update(blocks)
+      .set({ isVisible: false })
+      .where(eq(blocks.pageId, page.id))
+      .returning();
+    const check = fakeCheckUrls([BAD]);
+    const hold = gate();
+    const reachedLock = gate();
+    let first = true;
+
+    // The swap reads the block as hidden (nothing to scan), then pauses.
+    const swap = applyBlockUpdate(db, {
+      pageId: page.id,
+      blockId: block.id,
+      patch: { url: BAD },
+      checkUrls: check,
+      hooks: {
+        beforeLock: async () => {
+          if (!first) return;
+          first = false;
+          reachedLock.open();
+          await hold.opened;
+        },
+      },
+    });
+
+    await reachedLock.opened;
+    const shown = await applyBlockUpdate(db, {
+      pageId: page.id,
+      blockId: block.id,
+      patch: { isVisible: true },
+      checkUrls: check,
+    });
+    expect(shown.ok).toBe(true);
+
+    hold.open();
+    const result = await swap;
+
+    // Its snapshot went stale; the re-read block is visible, so BAD is scanned.
+    expect(result.ok).toBe(false);
+    expect(check.calls.some((urls) => urls.includes(BAD))).toBe(true);
+    const [after] = await db.select().from(blocks).where(eq(blocks.id, block.id));
+    expect(after).toMatchObject({ url: GOOD, isVisible: true });
+  });
+
+  it("does not retry fixed-URL edits when the page version moves", async () => {
+    const { page } = await seedOwnedPage(db, { isPublished: true, links: [GOOD] });
+    const [block] = await db.select().from(blocks).where(eq(blocks.pageId, page.id));
+    const check = fakeCheckUrls();
+    let first = true;
+
+    const result = await applyLiveEdit(db, {
+      pageId: page.id,
+      introducedUrls: ["https://new.example/"],
+      checkUrls: check,
+      write: replaceLink(block.id, "https://new.example/"),
+      hooks: {
+        beforeLock: async () => {
+          if (!first) return;
+          first = false;
+          await applyLiveEdit(db, {
+            pageId: page.id,
+            introducedUrls: [],
+            checkUrls: check,
+            write: async () => true,
+          });
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(check.calls).toHaveLength(1);
   });
 });

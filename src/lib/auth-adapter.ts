@@ -1,6 +1,6 @@
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import type { AdapterAccount, AdapterUser } from "next-auth/adapters";
-import { and, eq, gt, isNull, notExists, sql } from "drizzle-orm";
+import { and, eq, isNull, notExists, sql } from "drizzle-orm";
 import {
   accounts,
   sessions,
@@ -18,8 +18,12 @@ import {
   lockCanonical,
 } from "@/lib/signup-admission";
 
-/** A user created by createUser this recently, with nothing attached, is an orphan. */
-const ORPHAN_WINDOW_MS = 10 * 60 * 1000;
+/**
+ * How long createUser's record of an unlinked user it made is kept. Auth.js
+ * calls linkAccount straight after createUser in the same request, so this
+ * only bounds memory for attempts that never reach linkAccount.
+ */
+const CREATED_TTL_MS = 10 * 60 * 1000;
 
 /**
  * The Auth.js adapter, built for a given database so the integration tests
@@ -37,6 +41,17 @@ export function createAuthAdapter(db: Db) {
     sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   });
+
+  // Unverified users this adapter created and that are still waiting for
+  // linkAccount: id -> creation time. This is the only proof linkAccount
+  // accepts that a conflicting user is the rejected attempt's own orphan.
+  // Age and emptiness are not proof: any unverified row can look like that.
+  const createdUnlinked = new Map<string, number>();
+  function forgetExpired(now: number) {
+    for (const [id, at] of createdUnlinked) {
+      if (now - at > CREATED_TTL_MS) createdUnlinked.delete(id);
+    }
+  }
 
   return {
     ...baseAdapter,
@@ -61,7 +76,7 @@ export function createAuthAdapter(db: Db) {
      */
     async createUser(data: AdapterUser): Promise<AdapterUser> {
       const canonical = canonicalizeEmail(data.email);
-      return db.transaction(async (tx) => {
+      const created = await db.transaction(async (tx) => {
         await claimCanonicalIdentity(tx, { canonical });
         const [user] = await tx
           .insert(users)
@@ -75,6 +90,12 @@ export function createAuthAdapter(db: Db) {
           .returning();
         return user as AdapterUser;
       });
+      if (!created.emailVerified) {
+        const now = Date.now();
+        forgetExpired(now);
+        createdUnlinked.set(created.id, now);
+      }
+      return created;
     },
 
     /**
@@ -84,13 +105,16 @@ export function createAuthAdapter(db: Db) {
      * aliases signing up at once could both pass it. Re-check under the same
      * lock and insert the account in one transaction.
      *
-     * On conflict the just-created user is deleted — but only when it is
-     * provably the orphan createUser made moments ago (no accounts, not
-     * verified, no password, no workspace, created within minutes), never an
-     * existing user. The delete must commit, so the transaction returns a
-     * conflict result and the error is thrown after it.
+     * On conflict the just-created user is deleted — but only when this
+     * adapter's createUser made it for this attempt (and it still has nothing
+     * attached). Any other conflicting row is left for separate cleanup,
+     * however orphan-like it looks. The delete must commit, so the transaction
+     * returns a conflict result and the error is thrown after it.
      */
     async linkAccount(account: AdapterAccount): Promise<void> {
+      const createdHere = createdUnlinked.has(account.userId);
+      createdUnlinked.delete(account.userId);
+
       const outcome = await db.transaction(async (tx) => {
         const [user] = await tx
           .select({ id: users.id, email: users.email, emailCanonical: users.emailCanonical })
@@ -105,6 +129,7 @@ export function createAuthAdapter(db: Db) {
           const canonical = user.emailCanonical ?? canonicalizeEmail(user.email);
           await lockCanonical(tx, canonical);
           if (await hasEstablishedDuplicate(tx, canonical, user.id)) {
+            if (!createdHere) return "conflict" as const;
             await tx
               .delete(users)
               .where(
@@ -112,7 +137,6 @@ export function createAuthAdapter(db: Db) {
                   eq(users.id, user.id),
                   isNull(users.emailVerified),
                   isNull(users.password),
-                  gt(users.createdAt, new Date(Date.now() - ORPHAN_WINDOW_MS)),
                   notExists(
                     tx.select({ one: sql`1` }).from(accounts).where(eq(accounts.userId, user.id)),
                   ),
