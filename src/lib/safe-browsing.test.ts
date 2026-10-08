@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { normalizeUrl } from "./safe-browsing";
 
 /**
@@ -77,5 +77,59 @@ describe("normalizeUrl — allowed schemes", () => {
     for (const input of ["", "   ", "example.com", "not a url"]) {
       expect(normalizeUrl(input), input).toHaveProperty("error");
     }
+  });
+});
+
+/**
+ * Google rejects a whole Safe Browsing request with 400 "Invalid URL" if any
+ * entry is a mailto: or tel: link. That failed the scan open for every link on
+ * the page and left the cron rescanning the same rejected batch every night.
+ */
+describe("checkUrls — schemes Safe Browsing rejects", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  // API_KEY is read when the module loads, so load a fresh copy with a key set.
+  async function loadWithKey(fetchMock: typeof fetch) {
+    vi.resetModules();
+    vi.stubEnv("GOOGLE_SAFE_BROWSING_API_KEY", "test-key");
+    vi.stubGlobal("fetch", fetchMock);
+    return import("./safe-browsing");
+  }
+
+  it("sends only http and https URLs to Google", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response("{}", { status: 200 }),
+    );
+    const { checkUrls } = await loadWithKey(fetchMock);
+
+    const result = await checkUrls([
+      "tel:+16195550100",
+      "mailto:hello@example.com",
+      "https://example.com/",
+      "http://example.org/path?q=1",
+      "https://example.com/",
+    ]);
+
+    expect(result).toEqual({ safe: true, flaggedUrls: [], timedOut: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
+    expect(body.threatInfo.threatEntries).toEqual([
+      { url: "https://example.com/" },
+      { url: "http://example.org/path?q=1" },
+    ]);
+  });
+
+  it("does not call Google for a page with only phone and email links", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    const { checkUrls } = await loadWithKey(fetchMock);
+
+    const result = await checkUrls(["tel:+16195550100", "mailto:hello@example.com"]);
+
+    expect(result).toEqual({ safe: true, flaggedUrls: [], timedOut: false });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

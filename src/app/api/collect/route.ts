@@ -35,8 +35,14 @@ function getClient(): PostHog | null {
   if (!client) {
     client = new PostHog(key, {
       host: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
-      flushAt: 1,
-      flushInterval: 0,
+      // The route now waits for PostHog before responding, so bound that wait.
+      // SDK defaults (3 retries, 3 s apart, 10 s timeout each) could hold a
+      // function for ~50 s during a PostHog incident. Two attempts of at most
+      // 3 s each keeps the worst case under 7 s; the visitor never waits, as
+      // the beacon is fire-and-forget.
+      fetchRetryCount: 1,
+      fetchRetryDelay: 500,
+      requestTimeout: 3000,
       // Client-level, per the Node SDK: there is no per-event geo property.
       // The privacy policy states visitor IPs are not logged, and no feature
       // depends on geo.
@@ -85,7 +91,13 @@ export async function POST(request: NextRequest) {
   const slug = normalizeSlug(parsed.data.slug);
 
   try {
-    posthog.capture({
+    // captureImmediate() sends the event and awaits the HTTP request before
+    // resolving. capture() + flush() did not: capture() enqueues on a later
+    // microtask, so flush() found an empty queue and resolved at once, and the
+    // request to PostHog was still in flight when this route returned and
+    // Vercel suspended the function. Events then arrived minutes late, stamped
+    // with the arrival time, or were lost when the instance was recycled.
+    await posthog.captureImmediate({
       // Anonymous and per-event. The browser SDK used persistence:"memory",
       // which already produced a fresh id per page load, so this loses nothing
       // that was previously being measured.
@@ -100,13 +112,6 @@ export async function POST(request: NextRequest) {
         ...(parsed.data.label ? { label: parsed.data.label } : {}),
       },
     });
-
-    // capture() only queues. On a serverless runtime the function can freeze
-    // before the batch is sent, silently dropping the event — the SDK docs are
-    // explicit that flush/shutdown must be awaited in short-lived environments.
-    // The client uses sendBeacon and ignores the response, so this costs the
-    // visitor nothing.
-    await posthog.flush();
   } catch (error) {
     console.error("[collect] Failed to forward event:", error);
   }
