@@ -5,7 +5,12 @@ import type { InferSelectModel } from "drizzle-orm";
 import type { pages, blocks as blocksSchema } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
-import { updatePage, updateTheme as saveTheme, resetTheme } from "@/lib/actions/page";
+import {
+  updatePage,
+  updateBanner,
+  updateTheme as saveTheme,
+  resetTheme,
+} from "@/lib/actions/page";
 import { updateBlock } from "@/lib/actions/blocks";
 import { BlockList } from "./block-list";
 import { PageSettings } from "./page-settings";
@@ -14,6 +19,7 @@ import { LivePreview } from "./live-preview";
 import { PublishBar } from "./publish-bar";
 import { MobilePreviewOverlay } from "./mobile-preview-overlay";
 import { useSaveCoordinator } from "./use-save-coordinator";
+import { persistPatch } from "./persist-patch";
 import type { SaveEntity, SaveOutcome, SavePatch } from "./save-coordinator";
 import Link from "next/link";
 
@@ -50,19 +56,12 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
   // save-coordinator.ts). It lives here, above the tabs, so switching tabs
   // never discards an edit that has not been sent yet.
   const persist = useCallback(
-    async (entity: SaveEntity, patch: SavePatch): Promise<SaveOutcome> => {
-      const result =
-        entity.kind === "block"
-          ? await updateBlock({
-              id: entity.id,
-              ...patch,
-            } as Parameters<typeof updateBlock>[0])
-          : await updatePage({
-              pageId: page.id,
-              ...patch,
-            } as Parameters<typeof updatePage>[0]);
-      return result?.error ? { ok: false, error: result.error } : { ok: true };
-    },
+    (entity: SaveEntity, patch: SavePatch): Promise<SaveOutcome> =>
+      persistPatch(page.id, entity, patch, {
+        updateBlock: (input) => updateBlock(input as Parameters<typeof updateBlock>[0]),
+        updatePage: (input) => updatePage(input as Parameters<typeof updatePage>[0]),
+        updateBanner,
+      }),
     [page.id],
   );
   const saves = useSaveCoordinator(persist);

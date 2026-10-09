@@ -47,7 +47,7 @@ export async function publishPageCore(
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const [snapshot] = await db
-      .select({ contentVersion: pages.contentVersion })
+      .select({ contentVersion: pages.contentVersion, banner: pages.banner })
       .from(pages)
       .where(eq(pages.id, pageId))
       .limit(1);
@@ -59,7 +59,12 @@ export async function publishPageCore(
       .select({ type: blocks.type, url: blocks.url, content: blocks.content })
       .from(blocks)
       .where(eq(blocks.pageId, pageId));
-    const urls = [...new Set(rows.flatMap(extractScannableUrls))];
+    const urls = [
+      ...new Set([
+        ...rows.flatMap(extractScannableUrls),
+        ...(snapshot.banner?.url ? [snapshot.banner.url] : []),
+      ]),
+    ];
 
     const scan = await checkUrlsOrQueue(db, pageId, urls, checkUrls);
     if (!scan.ok) {

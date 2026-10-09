@@ -2,6 +2,8 @@ import type { InferSelectModel } from "drizzle-orm";
 import type { blocks as blocksSchema, pages } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
+import { getContrastColor } from "@/lib/contrast";
+import { StickyBanner } from "@/components/blocks/sticky-banner";
 import {
   BlockRuntimeProvider,
   type BlockRuntime,
@@ -50,7 +52,19 @@ export function PublicPageView({
 
   return (
     <BlockRuntimeProvider value={{ ...runtime, mode, pageId: page.id }}>
-      <PageFrame theme={theme} className={frameClassName}>
+      <PageFrame
+        theme={theme}
+        className={frameClassName}
+        top={
+          page.banner ? (
+            <StickyBanner
+              banner={page.banner}
+              background={theme.colorPrimary}
+              foreground={getContrastColor(theme.colorPrimary)}
+            />
+          ) : null
+        }
+      >
         {/* The page had no landmarks at all bar the footer. <main> stays inside
             the frame so it keeps the theme's max-width and padding, and the
             <footer> stays OUTSIDE it — a footer nested in <main> maps to

@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { pages } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { verifyPageOwnership } from "@/lib/page-ownership";
+import { prepareBanner, saveBanner } from "@/lib/banner";
 import { publicPageTag } from "@/lib/cache-tags";
 import { checkUrls } from "@/lib/safe-browsing";
 import { publishPageCore } from "@/lib/publish";
@@ -369,4 +370,45 @@ export async function unpublishPage(pageId: string) {
   revalidateTag(publicPageTag(page.slug), "max");
 
   return { page: updated };
+}
+
+// ─── Update Banner ──────────────────────────────────────────────────────────
+
+export async function updateBanner(input: { pageId: string; banner: unknown }) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { error: "Unauthorized" };
+  }
+
+  const rl = await checkRateLimit(mutationRateLimit, session.user.id);
+  if (!rl.success) return { error: "Too many requests. Please slow down." };
+
+  if (!z.uuid().safeParse(input?.pageId).success) {
+    return { error: "Invalid input" };
+  }
+
+  const prepared = prepareBanner(input.banner);
+  if ("error" in prepared) return { error: prepared.error };
+
+  const result = await verifyPageOwnership(input.pageId, session.user.id);
+  if (!result) {
+    return { error: "Page not found" };
+  }
+  const { page } = result;
+
+  const outcome = await saveBanner(db, {
+    pageId: page.id,
+    banner: prepared.banner,
+    checkUrls,
+  });
+  if (!outcome.ok) {
+    return outcome.flaggedUrls
+      ? { error: outcome.error, flaggedUrls: outcome.flaggedUrls }
+      : { error: outcome.error };
+  }
+
+  revalidatePath(`/${page.slug}`);
+  revalidateTag(publicPageTag(page.slug), "max");
+
+  return { page: outcome.value };
 }
