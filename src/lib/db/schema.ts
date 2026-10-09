@@ -171,7 +171,9 @@ export const blocks = pgTable(
     pageId: uuid("page_id")
       .references(() => pages.id, { onDelete: "cascade" })
       .notNull(),
-    type: varchar("type", { length: 30 }).notNull(), // 'link' | 'header' | 'text' | 'divider' | 'image'
+    // One of BLOCK_TYPES in src/lib/blocks/content.ts, which also owns the
+    // per-type shape of `content`.
+    type: varchar("type", { length: 30 }).notNull(),
     position: integer("position").notNull(),
     label: varchar("label", { length: 255 }),
     url: text("url"),

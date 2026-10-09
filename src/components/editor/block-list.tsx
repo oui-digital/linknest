@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { InferSelectModel } from "drizzle-orm";
 import type { blocks as blocksSchema } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
@@ -8,7 +8,6 @@ import {
   VALID_VARIANTS,
   ALL_BUTTON_STYLES,
   type BlockStyleOverrides,
-
 } from "@/lib/templates/theme";
 import {
   DndContext,
@@ -27,15 +26,38 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  createBlock,
-  updateBlock,
-  deleteBlock,
-  reorderBlocks,
-} from "@/lib/actions/blocks";
+import { createBlock, deleteBlock, reorderBlocks } from "@/lib/actions/blocks";
+import { parseBlockContent, type BlockType } from "@/lib/blocks/content";
+import type { SaveCoordinator, SaveStatus } from "./save-coordinator";
 import { ImageUpload } from "./image-upload";
+import { applyBlockEdit, restoreBlock } from "./block-edit";
 
 type Block = InferSelectModel<typeof blocksSchema>;
+
+/**
+ * `immediate` skips the typing debounce: toggles, uploads, preset clicks.
+ * `contentPatch` changes only those content keys on the latest state; async
+ * callbacks (uploads) must use it instead of `updates.content`.
+ */
+type UpdateOptions = {
+  immediate?: boolean;
+  contentPatch?: Record<string, unknown>;
+  stylePatch?: Partial<BlockStyleOverrides>;
+};
+
+const BLOCK_PICKER: { type: BlockType; label: string }[] = [
+  { type: "link", label: "Link" },
+  { type: "header", label: "Header" },
+  { type: "text", label: "Text" },
+  { type: "divider", label: "Divider" },
+  { type: "image", label: "Image" },
+];
+
+const DEFAULT_LABELS: Partial<Record<BlockType, string>> = {
+  link: "New Link",
+  header: "Heading",
+  text: "Text block",
+};
 
 interface BlockListProps {
   pageId: string;
@@ -43,6 +65,7 @@ interface BlockListProps {
   onBlocksChange: (blocks: Block[]) => void;
   plan: "free" | "pro";
   theme: ThemeTokens;
+  saves: SaveCoordinator;
   onError: (message: string) => void;
 }
 
@@ -52,6 +75,7 @@ export function BlockList({
   onBlocksChange,
   plan,
   theme,
+  saves,
   onError,
 }: BlockListProps) {
   const [isAdding, setIsAdding] = useState(false);
@@ -93,20 +117,13 @@ export function BlockList({
   );
 
   const handleAddBlock = useCallback(
-    async (type: "link" | "header" | "text" | "divider" | "image") => {
+    async (type: BlockType) => {
       setIsAdding(true);
       try {
         const result = await createBlock({
           pageId,
           type,
-          label:
-            type === "link"
-              ? "New Link"
-              : type === "header"
-                ? "Heading"
-                : type === "text"
-                  ? "Text block"
-                  : undefined,
+          label: DEFAULT_LABELS[type],
         });
 
         if (result.block) {
@@ -123,30 +140,51 @@ export function BlockList({
     [pageId, blocks, onBlocksChange, onError],
   );
 
+  // The list reflects an edit at once; the coordinator sends it after a pause
+  // in typing (or immediately for discrete changes), one request in flight per
+  // block, and keeps a refused edit flagged on the block instead of rolling the
+  // field back. Per-keystroke saves used to burn the mutation budget and reject
+  // half-typed URLs.
+  //
+  // Always applied to the LATEST list (a ref, updated synchronously), never to
+  // the list captured when a callback was created: an upload that finishes
+  // later must not put back state that was edited in the meantime.
+  const latestBlocks = useRef(blocks);
+  useEffect(() => {
+    latestBlocks.current = blocks;
+  }, [blocks]);
+
   const handleUpdateBlock = useCallback(
-    async (blockId: string, updates: Partial<Block>) => {
-      // Optimistic
-      const previous = blocks;
-      onBlocksChange(
-        blocks.map((b) => (b.id === blockId ? { ...b, ...updates } : b)),
+    (blockId: string, updates: Partial<Block>, options?: UpdateOptions) => {
+      const edit = applyBlockEdit(
+        latestBlocks.current,
+        blockId,
+        updates,
+        options?.contentPatch,
+        options?.stylePatch,
       );
+      latestBlocks.current = edit.blocks;
+      onBlocksChange(edit.blocks);
 
-      // Convert null values to undefined for Zod compatibility
-      const clean: Record<string, unknown> = { id: blockId };
-      if (updates.label !== undefined) clean.label = updates.label ?? undefined;
-      if (updates.url !== undefined) clean.url = updates.url ?? "";
-      if (updates.isVisible !== undefined) clean.isVisible = updates.isVisible;
-      if (updates.content !== undefined) clean.content = updates.content;
+      // Convert null values to what the action's schema expects.
+      const patch: Record<string, unknown> = {};
+      if (updates.label !== undefined) patch.label = updates.label ?? undefined;
+      if (updates.url !== undefined) patch.url = updates.url ?? "";
+      if (updates.isVisible !== undefined) patch.isVisible = updates.isVisible;
+      if (edit.content !== undefined) patch.content = edit.content;
 
-      const result = await updateBlock(
-        clean as Parameters<typeof updateBlock>[0],
-      );
-      if (result?.error) {
-        onBlocksChange(previous);
-        onError(result.error);
-      }
+      saves.enqueue({ kind: "block", id: blockId }, patch, {
+        immediate: options?.immediate,
+      });
     },
-    [blocks, onBlocksChange, onError],
+    [onBlocksChange, saves],
+  );
+
+  const handleRetry = useCallback(
+    (blockId: string) => {
+      void saves.retry({ kind: "block", id: blockId });
+    },
+    [saves],
   );
 
   const handleDeleteBlock = useCallback(
@@ -160,16 +198,29 @@ export function BlockList({
       );
       if (!confirmed) return;
 
-      const previous = blocks;
-      onBlocksChange(blocks.filter((b) => b.id !== blockId));
+      if (!target) return;
+      const entity = { kind: "block", id: blockId } as const;
 
-      const result = await deleteBlock(blockId);
+      // Hold the block's unsaved edits (neither sent nor dropped) until the
+      // server answers: dropped only once the delete is confirmed, restored
+      // with their failed/pending state if it is refused. Publishing waits
+      // for this answer (SaveCoordinator.holdWhile).
+      latestBlocks.current = latestBlocks.current.filter((b) => b.id !== blockId);
+      onBlocksChange(latestBlocks.current);
+
+      const request = deleteBlock(blockId).catch(() => ({
+        error: "Couldn't delete the block. Please try again.",
+      }));
+      const held = saves.holdWhile(entity, request.then((r) => !r?.error));
+      const result = await request;
       if (result?.error) {
-        onBlocksChange(previous);
+        latestBlocks.current = restoreBlock(latestBlocks.current, target);
+        onBlocksChange(latestBlocks.current);
         onError(result.error);
       }
+      await held;
     },
-    [blocks, onBlocksChange, onError],
+    [blocks, saves, onBlocksChange, onError],
   );
 
   const handleMoveBlock = useCallback(
@@ -218,9 +269,12 @@ export function BlockList({
               isLast={index === sorted.length - 1}
               plan={plan}
               theme={theme}
+              saveStatus={saves.status({ kind: "block", id: block.id })}
+              saveError={saves.error({ kind: "block", id: block.id })}
               onUpdate={handleUpdateBlock}
               onDelete={handleDeleteBlock}
               onMove={handleMoveBlock}
+              onRetry={handleRetry}
               onError={onError}
             />
           ))}
@@ -239,15 +293,7 @@ export function BlockList({
           Add block
         </p>
         <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              { type: "link", label: "Link" },
-              { type: "header", label: "Header" },
-              { type: "text", label: "Text" },
-              { type: "divider", label: "Divider" },
-              { type: "image", label: "Image" },
-            ] as const
-          ).map(({ type, label }) => (
+          {BLOCK_PICKER.map(({ type, label }) => (
             <button
               key={type}
               onClick={() => handleAddBlock(type)}
@@ -271,9 +317,12 @@ function SortableBlockItem({
   isLast,
   plan,
   theme,
+  saveStatus,
+  saveError,
   onUpdate,
   onDelete,
   onMove,
+  onRetry,
   onError,
 }: {
   block: Block;
@@ -281,9 +330,12 @@ function SortableBlockItem({
   isLast: boolean;
   plan: "free" | "pro";
   theme: ThemeTokens;
-  onUpdate: (id: string, updates: Partial<Block>) => void;
+  saveStatus: SaveStatus;
+  saveError: string | null;
+  onUpdate: (id: string, updates: Partial<Block>, options?: UpdateOptions) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, direction: "up" | "down") => void;
+  onRetry: (id: string) => void;
   onError: (message: string) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -295,36 +347,36 @@ function SortableBlockItem({
     transition,
   };
 
-  const content = (block.content ?? {}) as Record<string, unknown>;
-  const overrides = (content.styleOverrides ?? {}) as BlockStyleOverrides;
+  // Read through the lenient parser so every edit the form sends back only
+  // carries keys the server's strict writer accepts.
+  const content = useMemo(
+    () => parseBlockContent(block.type, block.content),
+    [block.type, block.content],
+  );
+  const overrides = useMemo(
+    () => (content.styleOverrides ?? {}) as BlockStyleOverrides,
+    [content],
+  );
   const imageUrl = (content.imageUrl as string | undefined) ?? block.url ?? null;
+  const failed = saveStatus === "failed";
 
   const handleStyleChange = useCallback(
     (updates: Partial<BlockStyleOverrides>) => {
-      const newOverrides = { ...overrides, ...updates };
-      // Remove undefined/null keys
-      for (const k of Object.keys(newOverrides)) {
-        if ((newOverrides as Record<string, unknown>)[k] === undefined) {
-          delete (newOverrides as Record<string, unknown>)[k];
-        }
-      }
-      onUpdate(block.id, {
-        content: { ...content, styleOverrides: newOverrides } as Record<string, unknown>,
-      });
+      // Only the changed keys: merged onto the latest overrides when applied.
+      onUpdate(block.id, {}, { immediate: true, stylePatch: updates });
     },
-    [block.id, content, overrides, onUpdate],
+    [block.id, onUpdate],
   );
 
   const handleResetStyle = useCallback(() => {
-    const { styleOverrides: _, ...rest } = content;
-    onUpdate(block.id, { content: rest as Record<string, unknown> });
-  }, [block.id, content, onUpdate]);
+    onUpdate(block.id, {}, { immediate: true, contentPatch: { styleOverrides: undefined } });
+  }, [block.id, onUpdate]);
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="rounded-lg border border-gray-200 bg-white"
+      className={`rounded-lg border bg-white ${failed ? "border-red-300" : "border-gray-200"}`}
     >
       <div className="flex items-center gap-2 p-3">
         {/* Drag handle (desktop only) */}
@@ -378,6 +430,14 @@ function SortableBlockItem({
           {block.label || block.url || block.type}
         </span>
 
+        {/* Save state */}
+        {(saveStatus === "pending" || saveStatus === "saving") && (
+          <span className="text-[10px] text-gray-400">Saving…</span>
+        )}
+        {failed && (
+          <span className="text-[10px] font-medium text-red-600">Not saved</span>
+        )}
+
         {/* Actions */}
         <button
           onClick={() => setIsEditing(!isEditing)}
@@ -393,6 +453,23 @@ function SortableBlockItem({
         </button>
       </div>
 
+      {/* A refused save stays visible, with its reason, until it goes through.
+          The edit is kept in the form; nothing is rolled back. */}
+      {failed && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 border-t border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700"
+        >
+          <span>Couldn&apos;t save: {saveError}</span>
+          <button
+            onClick={() => onRetry(block.id)}
+            className="shrink-0 font-medium underline hover:text-red-900"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Expanded edit form */}
       {isEditing && (
         <div className="space-y-3 border-t border-gray-100 p-3">
@@ -405,6 +482,7 @@ function SortableBlockItem({
                 type="text"
                 value={block.label ?? ""}
                 onChange={(e) => onUpdate(block.id, { label: e.target.value })}
+                maxLength={255}
                 className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
               />
             </div>
@@ -433,9 +511,7 @@ function SortableBlockItem({
                 label={imageUrl ? "Replace image" : "Upload image"}
                 onError={onError}
                 onUpload={(url) =>
-                  onUpdate(block.id, {
-                    content: { ...content, imageUrl: url },
-                  } as Partial<Block>)
+                  onUpdate(block.id, {}, { immediate: true, contentPatch: { imageUrl: url } })
                 }
               />
               <div>
@@ -480,7 +556,7 @@ function SortableBlockItem({
               type="checkbox"
               checked={block.isVisible}
               onChange={(e) =>
-                onUpdate(block.id, { isVisible: e.target.checked })
+                onUpdate(block.id, { isVisible: e.target.checked }, { immediate: true })
               }
               className="rounded"
             />

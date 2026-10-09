@@ -7,17 +7,19 @@ import type { pages } from "@/lib/db/schema";
 import * as Sentry from "@sentry/nextjs";
 import { publishPage, unpublishPage } from "@/lib/actions/page";
 import { getPublicPageUrl } from "@/lib/slugs";
+import type { SaveCoordinator } from "./save-coordinator";
 import { ShareModal } from "./share-modal";
 
 type Page = InferSelectModel<typeof pages>;
 
 interface PublishBarProps {
   page: Page;
+  saves: SaveCoordinator;
   onPageChange: (updates: Partial<Page>) => void;
   onError: (message: string) => void;
 }
 
-export function PublishBar({ page, onPageChange, onError }: PublishBarProps) {
+export function PublishBar({ page, saves, onPageChange, onError }: PublishBarProps) {
   const router = useRouter();
   const [isPublishing, setIsPublishing] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -26,6 +28,15 @@ export function PublishBar({ page, onPageChange, onError }: PublishBarProps) {
     const wasPublished = page.isPublished;
     setIsPublishing(true);
     try {
+      // Nothing goes live over unsaved or rejected edits: send everything that
+      // is still pending, retry anything that failed, and stop if any of it is
+      // still refused.
+      const flushed = await saves.flushAll();
+      if (!flushed.ok) {
+        onError("Fix the highlighted change before publishing.");
+        return;
+      }
+
       // NOTE: do not save the theme here. Theme edits are already persisted
       // incrementally by the theme editor, and this save used to pass the fully
       // *merged* theme (template defaults + user overrides) through the
@@ -85,7 +96,7 @@ export function PublishBar({ page, onPageChange, onError }: PublishBarProps) {
     } finally {
       setIsPublishing(false);
     }
-  }, [page.id, page.isPublished, router, onPageChange, onError]);
+  }, [page.id, page.slug, page.isPublished, saves, router, onPageChange, onError]);
 
   const handleUnpublish = useCallback(async () => {
     const result = await unpublishPage(page.id);
@@ -96,6 +107,8 @@ export function PublishBar({ page, onPageChange, onError }: PublishBarProps) {
     onPageChange({ isPublished: false });
     router.refresh();
   }, [page.id, router, onPageChange, onError]);
+
+  const blocked = saves.hasFailed();
 
   return (
     <>
@@ -134,7 +147,8 @@ export function PublishBar({ page, onPageChange, onError }: PublishBarProps) {
         )}
         <button
           onClick={handlePublish}
-          disabled={isPublishing}
+          disabled={isPublishing || blocked}
+          title={blocked ? "A change could not be saved. Fix it before publishing." : undefined}
           className="rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
         >
           {isPublishing

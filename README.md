@@ -76,6 +76,22 @@ and API routes — client checks are hints only.
 matching: the URL parser strips tabs and newlines, so `java\tscript:` defeats any
 anchored regex.
 
+**Block content.** Block types and the closed shape of each type's `content`
+live in `src/lib/blocks/content.ts`: strict writers reject unknown keys, lenient
+readers (`parseBlockContent`) strip them and salvage what validates, so a stray
+key never blanks a block. Every destination a block carries — the `url` column
+and any links inside `content` — comes from `extractScannableUrls()` in
+`src/lib/block-urls.ts`; creation, edits, visibility changes and publishing all
+scan that list. Owner-uploaded images are never scanned and must therefore be
+our own R2 assets (`isOwnAssetUrl()`).
+
+**Editor saves.** The editor never writes per keystroke. `EditorShell` owns one
+`SaveCoordinator` (`src/components/editor/save-coordinator.ts`) that merges
+edits per block or page field, keeps one request in flight per entity, and
+keeps a refused patch (flagged inline, with Retry) instead of rolling the field
+back. `PublishBar` awaits `flushAll()` and refuses to publish while anything is
+still unsaved or rejected.
+
 **Reconciliation.** `/api/cron/reconcile` (daily, see `vercel.json`) re-derives
 `workspaces.plan` from the canonical `subscriptions` table, enforces page limits
 after a downgrade grace period, rescans URLs queued when Safe Browsing timed out,
@@ -138,6 +154,18 @@ Action only.
 
 **Schema backfills.** Some schema changes need a one-off SQL step right after
 `pnpm db:push`; they live in `scripts/backfills/`, numbered in order.
+
+## Environments
+
+Preview deployments must not touch production data or inboxes. Per Vercel
+environment, set a separate `DATABASE_URL` (a Neon branch), R2 bucket
+(`R2_BUCKET_NAME`, `R2_PUBLIC_URL`) and PostHog project, plus
+`NEXT_PUBLIC_SITE_URL`/`AUTH_URL`. `SITE_URL` (`src/lib/site.ts`) falls back to
+the Vercel production domain only on production deployments; a preview falls
+back to its branch URL. Outside production every email is redirected to
+`EMAIL_REDIRECT_TO` and sending is refused when it is unset (`src/lib/email.ts`).
+Vercel runs crons on production only; on a preview, trigger
+`/api/cron/reconcile` by hand with `curl -H "Authorization: Bearer $CRON_SECRET"`.
 
 ## Known gaps
 

@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
-import { updatePage } from "@/lib/actions/page";
 import { AvatarFallback } from "@/components/ui/avatar-fallback";
+import type { SaveCoordinator, SaveEntity } from "./save-coordinator";
 
 type Page = InferSelectModel<typeof pages>;
 
@@ -14,12 +14,13 @@ type Page = InferSelectModel<typeof pages>;
 const MAX_TITLE = 255;
 const MAX_BIO = 500;
 
-const SAVE_DEBOUNCE_MS = 600;
+const PAGE: SaveEntity = { kind: "page" };
 
 interface PageSettingsProps {
   page: Page;
   plan: "free" | "pro";
   theme: ThemeTokens;
+  saves: SaveCoordinator;
   onPageChange: (updates: Partial<Page>) => void;
   onThemeChange: (updates: Partial<ThemeTokens>) => void;
   onError: (message: string) => void;
@@ -29,61 +30,26 @@ export function PageSettings({
   page,
   plan,
   theme,
+  saves,
   onPageChange,
   onThemeChange,
   onError,
 }: PageSettingsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">(
-    "idle",
-  );
+  const [touched, setTouched] = useState(false);
 
-  // One timer per field. A single shared timer would let a later field's edit
-  // cancel an earlier field's pending write.
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  // Ignore the result of a request that a newer edit has already superseded, so
-  // a stale rejection cannot roll the UI back over newer input.
-  const seq = useRef<Record<string, number>>({});
-
-  useEffect(() => {
-    const pending = timers.current;
-    return () => {
-      Object.values(pending).forEach(clearTimeout);
-    };
-  }, []);
-
+  // Edits are applied to the shell's state at once and handed to the shared
+  // save coordinator, which debounces, serialises and retries them. The panel
+  // used to keep its own per-field timers and clear them on unmount, so
+  // switching tabs within 600ms of typing silently dropped the edit.
   const handleSave = useCallback(
     (field: string, value: string) => {
+      setTouched(true);
       onPageChange({ [field]: value } as Partial<Page>);
-
-      clearTimeout(timers.current[field]);
-      setSaveState("saving");
-
-      const ticket = (seq.current[field] ?? 0) + 1;
-      seq.current[field] = ticket;
-
-      // Debounced: this used to fire one server action per keystroke, which
-      // burned the 30/min mutation budget within a single sentence and then
-      // silently dropped every later character.
-      timers.current[field] = setTimeout(async () => {
-        try {
-          const result = await updatePage({ pageId: page.id, [field]: value });
-          if (seq.current[field] !== ticket) return; // superseded
-          if (result?.error) {
-            setSaveState("idle");
-            onError(result.error);
-            return;
-          }
-          setSaveState("saved");
-        } catch {
-          if (seq.current[field] !== ticket) return;
-          setSaveState("idle");
-          onError("Couldn't save your changes. Please try again.");
-        }
-      }, SAVE_DEBOUNCE_MS);
+      saves.enqueue(PAGE, { [field]: value });
     },
-    [page.id, onPageChange, onError],
+    [saves, onPageChange],
   );
 
   const handleAvatarUpload = useCallback(
@@ -105,9 +71,9 @@ export function PageSettings({
         }
 
         const { url } = await res.json();
+        setTouched(true);
         onPageChange({ avatarUrl: url } as Partial<Page>);
-        const result = await updatePage({ pageId: page.id, avatarUrl: url });
-        if (result?.error) onError(result.error);
+        saves.enqueue(PAGE, { avatarUrl: url }, { immediate: true });
       } catch (error) {
         console.error("Avatar upload error:", error);
         onError(
@@ -119,14 +85,24 @@ export function PageSettings({
         setUploading(false);
       }
     },
-    [page.id, onPageChange, onError],
+    [saves, onPageChange, onError],
   );
 
-  const handleRemoveAvatar = useCallback(async () => {
+  const handleRemoveAvatar = useCallback(() => {
+    setTouched(true);
     onPageChange({ avatarUrl: "" } as Partial<Page>);
-    const result = await updatePage({ pageId: page.id, avatarUrl: "" });
-    if (result?.error) onError(result.error);
-  }, [page.id, onPageChange, onError]);
+    saves.enqueue(PAGE, { avatarUrl: "" }, { immediate: true });
+  }, [saves, onPageChange]);
+
+  const status = saves.status(PAGE);
+  const saveLabel =
+    status === "pending" || status === "saving"
+      ? "Saving…"
+      : status === "failed"
+        ? "Couldn't save"
+        : touched
+          ? "Saved"
+          : "";
 
   return (
     <div className="space-y-6">
@@ -183,15 +159,25 @@ export function PageSettings({
           <h3 className="text-sm font-semibold">Page Info</h3>
           <span
             aria-live="polite"
-            className="text-xs text-gray-400"
+            className={`text-xs ${status === "failed" ? "text-red-600" : "text-gray-400"}`}
           >
-            {saveState === "saving"
-              ? "Saving…"
-              : saveState === "saved"
-                ? "Saved"
-                : ""}
+            {saveLabel}
           </span>
         </div>
+        {status === "failed" && (
+          <p
+            role="alert"
+            className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+          >
+            <span>Couldn&apos;t save: {saves.error(PAGE)}</span>
+            <button
+              onClick={() => void saves.retry(PAGE)}
+              className="font-medium underline hover:text-red-900"
+            >
+              Retry
+            </button>
+          </p>
+        )}
         <div className="space-y-3">
           <div>
             <label className="text-xs font-medium text-gray-500">

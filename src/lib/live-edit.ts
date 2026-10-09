@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { blocks, pages } from "@/lib/db/schema";
 import type { Db, Tx } from "@/lib/db/types";
 import { checkUrlsOrQueue, type UrlChecker } from "@/lib/publish-checks";
+import { extractScannableUrls } from "@/lib/block-urls";
 
 /**
  * Publish and block edits share one protocol so that no link reaches a live
@@ -35,22 +36,24 @@ import { checkUrlsOrQueue, type UrlChecker } from "@/lib/publish-checks";
  */
 
 /**
- * The URL an update to an existing block puts in front of visitors, if any:
- * a changed URL on a visible block, or any URL on a block being shown. A URL
- * changed on a hidden block is picked up later, when the block is shown.
+ * The destinations an update to an existing block puts in front of visitors:
+ * every URL on a block being shown, or the URLs a visible block did not have
+ * before. A URL changed on a hidden block is picked up later, when the block
+ * is shown. Destinations come from extractScannableUrls(), so a link carried
+ * inside `content` is covered exactly like the `url` column.
  *
- * Showing a block re-scans a URL that was scanned at publish time. That is a
+ * Showing a block re-scans URLs that were scanned at publish time. That is a
  * cheap precaution: a destination can be flagged long after it was added.
  */
 export function urlsIntroducedByUpdate(
-  before: { url: string | null; isVisible: boolean },
-  patch: { url?: string | null; isVisible?: boolean },
+  before: { urls: readonly string[]; isVisible: boolean },
+  after: { urls: readonly string[]; isVisible: boolean },
 ): string[] {
-  const nextUrl = patch.url !== undefined ? patch.url : before.url;
-  const nextVisible = patch.isVisible ?? before.isVisible;
-  const urlChanged = patch.url !== undefined && patch.url !== before.url;
-  const becameVisible = nextVisible && !before.isVisible;
-  return nextUrl && nextVisible && (urlChanged || becameVisible) ? [nextUrl] : [];
+  if (!after.isVisible) return [];
+  const next = [...new Set(after.urls.filter(Boolean))];
+  if (!before.isVisible) return next;
+  const previous = new Set(before.urls);
+  return next.filter((url) => !previous.has(url));
 }
 
 export type LiveEditHooks = {
@@ -224,11 +227,31 @@ export async function applyBlockUpdate(
     pageId,
     introducedUrls: async (reader) => {
       const [current] = await reader
-        .select({ url: blocks.url, isVisible: blocks.isVisible })
+        .select({
+          type: blocks.type,
+          url: blocks.url,
+          content: blocks.content,
+          isVisible: blocks.isVisible,
+        })
         .from(blocks)
         .where(and(eq(blocks.id, blockId), eq(blocks.pageId, pageId)))
         .limit(1);
-      introduced = current ? urlsIntroducedByUpdate(current, patch) : [];
+      if (!current) {
+        introduced = [];
+        return introduced;
+      }
+      const next = {
+        type: current.type,
+        url: patch.url !== undefined ? patch.url : current.url,
+        content: patch.content !== undefined ? patch.content : current.content,
+      };
+      introduced = urlsIntroducedByUpdate(
+        { urls: extractScannableUrls(current), isVisible: current.isVisible },
+        {
+          urls: extractScannableUrls(next),
+          isVisible: patch.isVisible ?? current.isVisible,
+        },
+      );
       return introduced;
     },
     checkUrls,

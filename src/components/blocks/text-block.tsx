@@ -1,11 +1,12 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { blocks } from "@/lib/db/schema";
+import { parseBlockContent } from "@/lib/blocks/content";
 
 type Block = InferSelectModel<typeof blocks>;
 
 export function TextBlock({ block }: { block: Block }) {
-  const content = block.content as { text?: string } | null;
-  const text = content?.text || block.label || "";
+  const content = parseBlockContent("text", block.content);
+  const text = content.text || block.label || "";
 
   return (
     <p

@@ -20,9 +20,10 @@ import { SITE_URL } from "@/lib/site";
  */
 
 const eventSchema = z.object({
-  event: z.enum(["$pageview", "link_click"]),
+  event: z.enum(["$pageview", "link_click", "embed_play"]),
   slug: z.string().min(1).max(63),
-  blockId: z.string().uuid().optional(),
+  // A block id, or "banner" for the page-level announcement link.
+  blockId: z.union([z.uuid(), z.literal("banner")]).optional(),
   url: z.string().max(2048).optional(),
   label: z.string().max(255).optional(),
 });

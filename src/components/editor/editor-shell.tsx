@@ -6,12 +6,15 @@ import type { pages, blocks as blocksSchema } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { updatePage, updateTheme as saveTheme, resetTheme } from "@/lib/actions/page";
+import { updateBlock } from "@/lib/actions/blocks";
 import { BlockList } from "./block-list";
 import { PageSettings } from "./page-settings";
 import { ThemeEditor } from "./theme-editor";
 import { LivePreview } from "./live-preview";
 import { PublishBar } from "./publish-bar";
 import { MobilePreviewOverlay } from "./mobile-preview-overlay";
+import { useSaveCoordinator } from "./use-save-coordinator";
+import type { SaveEntity, SaveOutcome, SavePatch } from "./save-coordinator";
 import Link from "next/link";
 
 type Page = InferSelectModel<typeof pages>;
@@ -42,6 +45,27 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
     const timer = setTimeout(() => setError(null), 8000);
     return () => clearTimeout(timer);
   }, [error]);
+
+  // Every block and page-field edit goes through one coordinator (see
+  // save-coordinator.ts). It lives here, above the tabs, so switching tabs
+  // never discards an edit that has not been sent yet.
+  const persist = useCallback(
+    async (entity: SaveEntity, patch: SavePatch): Promise<SaveOutcome> => {
+      const result =
+        entity.kind === "block"
+          ? await updateBlock({
+              id: entity.id,
+              ...patch,
+            } as Parameters<typeof updateBlock>[0])
+          : await updatePage({
+              pageId: page.id,
+              ...patch,
+            } as Parameters<typeof updatePage>[0]);
+      return result?.error ? { ok: false, error: result.error } : { ok: true };
+    },
+    [page.id],
+  );
+  const saves = useSaveCoordinator(persist);
 
   // Derive theme from pageState — single source of truth (no separate theme state)
   const template = useMemo(
@@ -141,6 +165,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
         </div>
         <PublishBar
           page={pageState}
+          saves={saves}
           onPageChange={handlePageUpdate}
           onError={setError}
         />
@@ -195,6 +220,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
                 onBlocksChange={handleBlocksUpdate}
                 plan={plan}
                 theme={theme}
+                saves={saves}
                 onError={setError}
               />
             )}
@@ -218,6 +244,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
                 page={pageState}
                 plan={plan}
                 theme={theme}
+                saves={saves}
                 onPageChange={handlePageUpdate}
                 onThemeChange={handleThemeUpdate}
                 onError={setError}

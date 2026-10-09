@@ -14,6 +14,40 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+export type EmailDelivery =
+  | { kind: "send"; to: string; subject: string }
+  | { kind: "refuse"; reason: string };
+
+/**
+ * Where a message actually goes.
+ *
+ * Production sends to the recipient. Everywhere else — Preview deployments
+ * and local development — every message is redirected to EMAIL_REDIRECT_TO,
+ * with the original recipient recorded in the subject, so flows can be tested
+ * end to end without reaching a real inbox. When that inbox is not configured,
+ * sending is refused outright: a preview must never mail real people because
+ * someone forgot a variable.
+ */
+export function resolveEmailDelivery(
+  { to, subject }: { to: string; subject: string },
+  env: { VERCEL_ENV?: string; EMAIL_REDIRECT_TO?: string } = {
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    EMAIL_REDIRECT_TO: process.env.EMAIL_REDIRECT_TO,
+  },
+): EmailDelivery {
+  if (env.VERCEL_ENV === "production") return { kind: "send", to, subject };
+
+  const redirect = env.EMAIL_REDIRECT_TO?.trim();
+  if (!redirect) {
+    return {
+      kind: "refuse",
+      reason:
+        "EMAIL_REDIRECT_TO is not set and this is not a production deployment",
+    };
+  }
+  return { kind: "send", to: redirect, subject: `[to: ${to}] ${subject}` };
+}
+
 async function sendEmail({
   to,
   subject,
@@ -23,6 +57,13 @@ async function sendEmail({
   subject: string;
   html: string;
 }) {
+  const delivery = resolveEmailDelivery({ to, subject });
+  if (delivery.kind === "refuse") {
+    // The recipient address is deliberately kept out of the logs.
+    console.error(`[email] Refused to send "${subject}": ${delivery.reason}`);
+    throw new Error(`Email delivery refused: ${delivery.reason}`);
+  }
+
   const res = await fetch("https://api.emailit.com/v2/emails", {
     method: "POST",
     headers: {
@@ -31,8 +72,8 @@ async function sendEmail({
     },
     body: JSON.stringify({
       from: FROM,
-      to,
-      subject,
+      to: delivery.to,
+      subject: delivery.subject,
       html,
       // Every email this app sends is an authentication email, and click
       // tracking BREAKS them. Emailit rewrites each href to
