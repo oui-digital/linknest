@@ -12,9 +12,9 @@ import {
   SOCIAL_DESTINATIONS_QUERY,
   TOP_BLOCKS_QUERY,
   TOP_SOURCES_QUERY,
+  analyticsWindow,
   clampDays,
   clicksPerView,
-  dayKeys,
   dayLabels,
   denseSeries,
   mergeTopLinks,
@@ -72,7 +72,8 @@ export async function GET(request: NextRequest) {
   const maxDays = getLimit(workspace.plan as PlanId, "analytics_days");
   const days = clampDays(Number(params.get("days")) || null, maxDays);
   const full = params.get("view") === "full";
-  const keys = dayKeys(days);
+  const window = analyticsWindow(days);
+  const keys = window.keys;
   const labels = dayLabels(keys);
   const base = { days, maxDays, labels };
 
@@ -119,7 +120,11 @@ export async function GET(request: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        query: { kind: "HogQLQuery", query, values: { urls, days, ...values } },
+        query: {
+          kind: "HogQLQuery",
+          query,
+          values: { urls, start: window.start, end: window.end, ...values },
+        },
       }),
       cache: "no-store",
     });

@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
+  DAILY_QUERY,
+  SOCIAL_DESTINATIONS_QUERY,
   TOP_BLOCKS_QUERY,
+  TOP_SOURCES_QUERY,
+  analyticsWindow,
   canonicalReferrer,
   clampDays,
   clicksPerView,
@@ -133,5 +137,23 @@ describe("clicksPerView", () => {
   it("can exceed 1 and is null without views", () => {
     expect(clicksPerView(15, 10)).toBe(1.5);
     expect(clicksPerView(3, 0)).toBeNull();
+  });
+});
+
+describe("analyticsWindow", () => {
+  it("starts at 00:00 UTC on the first day shown and ends now", () => {
+    const w = analyticsWindow(7, new Date("2026-10-09T12:00:00Z"));
+    expect(w.keys[0]).toBe("2026-10-03");
+    expect(w.start).toBe("2026-10-03 00:00:00");
+    expect(w.end).toBe("2026-10-09 12:00:00");
+  });
+
+  it("is used by every query, with UTC day buckets", () => {
+    for (const q of [DAILY_QUERY, TOP_BLOCKS_QUERY, SOCIAL_DESTINATIONS_QUERY, TOP_SOURCES_QUERY]) {
+      expect(q).toContain("toDateTime({start}, 'UTC')");
+      expect(q).toContain("toDateTime({end}, 'UTC')");
+      expect(q).not.toContain("INTERVAL");
+    }
+    expect(DAILY_QUERY).toContain("toTimeZone(timestamp, 'UTC')");
   });
 });

@@ -56,6 +56,22 @@ export function dayKeys(days: number, now: Date = new Date()): string[] {
   return keys;
 }
 
+/**
+ * The reporting window: from 00:00 UTC on the first day shown to now. Every
+ * query and the chart buckets use this one interval. A rolling
+ * "now() - INTERVAL n DAY" boundary used to reach into an eighth, partial
+ * calendar day that the chart dropped, so the summary disagreed with the
+ * top-links table.
+ */
+export function analyticsWindow(days: number, now: Date = new Date()) {
+  const keys = dayKeys(days, now);
+  return {
+    keys,
+    start: `${keys[0]} 00:00:00`,
+    end: now.toISOString().slice(0, 19).replace("T", " "),
+  };
+}
+
 /** Short axis labels for day keys: weekdays up to two weeks, then "Oct 9". */
 export function dayLabels(keys: string[]): string[] {
   return keys.map((key) =>
@@ -75,15 +91,17 @@ export function denseSeries(byDay: Map<string, number>, keys: string[]): number[
 
 // ─── Queries ────────────────────────────────────────────────────────────────
 // All parameterised ({…} values), never interpolated: the slug reaches these
-// from a query string. Explicit LIMITs because the query endpoint otherwise
+// from a query string. Days are UTC (PostHog would otherwise bucket in the
+// project's time zone) and bounded by analyticsWindow(). Explicit LIMITs because the query endpoint otherwise
 // applies its own default.
 
 export const DAILY_QUERY = `
-  SELECT toDate(timestamp) AS day, count() AS c
+  SELECT toDate(toTimeZone(timestamp, 'UTC')) AS day, count() AS c
   FROM events
   WHERE event = {event}
     AND properties.$current_url IN {urls}
-    AND timestamp >= now() - INTERVAL {days} DAY
+    AND timestamp >= toDateTime({start}, 'UTC')
+    AND timestamp <= toDateTime({end}, 'UTC')
   GROUP BY day
   ORDER BY day
   LIMIT 400`;
@@ -102,7 +120,8 @@ export const TOP_BLOCKS_QUERY = `
   WHERE event IN ('link_click', 'embed_play')
     AND properties.$current_url IN {urls}
     AND properties.block_id IS NOT NULL
-    AND timestamp >= now() - INTERVAL {days} DAY
+    AND timestamp >= toDateTime({start}, 'UTC')
+    AND timestamp <= toDateTime({end}, 'UTC')
   GROUP BY block_id
   ORDER BY clicks + plays DESC
   LIMIT ${TOP_LINKS_LIMIT}`;
@@ -117,7 +136,8 @@ export const SOCIAL_DESTINATIONS_QUERY = `
   WHERE event = 'link_click'
     AND properties.$current_url IN {urls}
     AND properties.block_id IN {blockIds}
-    AND timestamp >= now() - INTERVAL {days} DAY
+    AND timestamp >= toDateTime({start}, 'UTC')
+    AND timestamp <= toDateTime({end}, 'UTC')
   GROUP BY block_id, url
   ORDER BY clicks DESC
   LIMIT 500`;
@@ -127,7 +147,8 @@ export const TOP_SOURCES_QUERY = `
   FROM events
   WHERE event = '$pageview'
     AND properties.$current_url IN {urls}
-    AND timestamp >= now() - INTERVAL {days} DAY
+    AND timestamp >= toDateTime({start}, 'UTC')
+    AND timestamp <= toDateTime({end}, 'UTC')
   GROUP BY source
   ORDER BY views DESC
   LIMIT ${TOP_SOURCES_LIMIT}`;
