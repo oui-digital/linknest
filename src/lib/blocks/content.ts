@@ -37,7 +37,11 @@ const styleOverridesShape = {
   buttonStyle: z.string().max(32).optional(),
 };
 
+// Grid templates only (src/lib/templates/layout.ts); ignored by stack layouts.
+const sizeField = { size: z.enum(["default", "wide", "tall"]).optional() };
+
 const linkShape = {
+  ...sizeField,
   // Uploaded square image shown at the start of the button (R2 asset only).
   thumbnailUrl: z.string().max(2048).optional(),
   // Supporting line under the label.
@@ -49,6 +53,7 @@ const headerShape = {};
 const textShape = { text: z.string().max(5000).optional() };
 const dividerShape = {};
 const imageShape = {
+  ...sizeField,
   imageUrl: z.string().max(2048).optional(),
   alt: z.string().max(255).optional(),
 };

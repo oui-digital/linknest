@@ -28,6 +28,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { createBlock, deleteBlock, reorderBlocks } from "@/lib/actions/blocks";
 import { parseBlockContent, type BlockType, type SocialItem } from "@/lib/blocks/content";
+import type { LayoutType } from "@/lib/templates";
+import { sizeOptions, type BlockSize } from "@/lib/templates/layout";
 import type { SaveCoordinator, SaveStatus } from "./save-coordinator";
 import { ImageUpload } from "./image-upload";
 import { applyBlockEdit, restoreBlock } from "./block-edit";
@@ -67,6 +69,7 @@ interface BlockListProps {
   onBlocksChange: (blocks: Block[]) => void;
   plan: "free" | "pro";
   theme: ThemeTokens;
+  layout: LayoutType;
   saves: SaveCoordinator;
   onError: (message: string) => void;
 }
@@ -77,6 +80,7 @@ export function BlockList({
   onBlocksChange,
   plan,
   theme,
+  layout,
   saves,
   onError,
 }: BlockListProps) {
@@ -271,6 +275,7 @@ export function BlockList({
               isLast={index === sorted.length - 1}
               plan={plan}
               theme={theme}
+              layout={layout}
               saveStatus={saves.status({ kind: "block", id: block.id })}
               saveError={saves.error({ kind: "block", id: block.id })}
               onUpdate={handleUpdateBlock}
@@ -324,6 +329,7 @@ function SortableBlockItem({
   isLast,
   plan,
   theme,
+  layout,
   saveStatus,
   saveError,
   onUpdate,
@@ -337,6 +343,7 @@ function SortableBlockItem({
   isLast: boolean;
   plan: "free" | "pro";
   theme: ThemeTokens;
+  layout: LayoutType;
   saveStatus: SaveStatus;
   saveError: string | null;
   onUpdate: (id: string, updates: Partial<Block>, options?: UpdateOptions) => void;
@@ -628,6 +635,36 @@ function SortableBlockItem({
                 onUpdate(block.id, {}, { immediate: true, contentPatch: { items } })
               }
             />
+          )}
+          {sizeOptions(block.type, layout).length > 0 && (
+            <div>
+              <span className="text-xs font-medium text-gray-500">Size in grid</span>
+              <div className="mt-1 flex gap-1.5" role="radiogroup" aria-label="Size in grid">
+                {sizeOptions(block.type, layout).map((size) => {
+                  const current = (content.size as BlockSize | undefined) ?? "default";
+                  return (
+                    <button
+                      key={size}
+                      role="radio"
+                      aria-checked={current === size}
+                      onClick={() =>
+                        onUpdate(block.id, {}, {
+                          immediate: true,
+                          contentPatch: { size: size === "default" ? undefined : size },
+                        })
+                      }
+                      className={`rounded px-2 py-1 text-[11px] font-medium capitalize transition-colors ${
+                        current === size
+                          ? "bg-gray-900 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-gray-500">Visible</label>

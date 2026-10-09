@@ -219,6 +219,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
                 onBlocksChange={handleBlocksUpdate}
                 plan={plan}
                 theme={theme}
+                layout={template.layout}
                 saves={saves}
                 onError={setError}
               />

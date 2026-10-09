@@ -4,7 +4,7 @@ import { parseBlockContent } from "@/lib/blocks/content";
 
 type Block = InferSelectModel<typeof blocks>;
 
-export function ImageBlock({ block }: { block: Block }) {
+export function ImageBlock({ block, tile = false }: { block: Block; tile?: boolean }) {
   const content = parseBlockContent("image", block.content);
   const imageUrl = content.imageUrl || block.url;
   const alt = content.alt || block.label || "";
@@ -12,12 +12,15 @@ export function ImageBlock({ block }: { block: Block }) {
   if (!imageUrl) return null;
 
   return (
-    <div className="w-full overflow-hidden" style={{ borderRadius: "var(--ln-border-radius)" }}>
+    <div
+      className={`w-full overflow-hidden ${tile ? "h-full min-h-[104px]" : ""}`}
+      style={{ borderRadius: "var(--ln-border-radius)" }}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={imageUrl}
         alt={alt}
-        className="h-auto w-full"
+        className={tile ? "h-full w-full object-cover" : "h-auto w-full"}
         loading="lazy"
       />
     </div>

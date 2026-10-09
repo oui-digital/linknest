@@ -8,13 +8,14 @@ type Block = InferSelectModel<typeof blocks>;
 interface LinkBlockProps {
   block: Block;
   resolvedStyle?: React.CSSProperties;
+  tile?: boolean;
 }
 
-export function LinkBlock({ block, resolvedStyle }: LinkBlockProps) {
+export function LinkBlock({ block, resolvedStyle, tile = false }: LinkBlockProps) {
   if (!block.url) return null;
 
   const { thumbnailUrl, description } = parseBlockContent("link", block.content);
-  const isCard = Boolean(thumbnailUrl || description);
+  const isCard = !tile && Boolean(thumbnailUrl || description);
 
   // tel:/mailto: stay in the same tab; see isExternalPage().
   const external = isExternalPage(block.url);
@@ -25,9 +26,11 @@ export function LinkBlock({ block, resolvedStyle }: LinkBlockProps) {
     color: "var(--ln-btn-text)",
     backgroundColor: "var(--ln-btn-bg)",
     borderRadius: "var(--ln-btn-radius)",
-    padding: isCard
-      ? "calc(var(--ln-btn-py) * 0.6) var(--ln-btn-py)"
-      : "var(--ln-btn-py) var(--ln-btn-px)",
+    padding: tile
+      ? "calc(var(--ln-btn-py) * 1.25)"
+      : isCard
+        ? "calc(var(--ln-btn-py) * 0.6) var(--ln-btn-py)"
+        : "var(--ln-btn-py) var(--ln-btn-px)",
     borderWidth: "var(--ln-btn-border-w)",
     borderColor: "var(--ln-btn-border-c)",
     borderStyle: "solid",
@@ -53,11 +56,31 @@ export function LinkBlock({ block, resolvedStyle }: LinkBlockProps) {
       // The label alone: the description must not end up in analytics.
       data-link-label={block.label ?? undefined}
       className={`${
-        isCard ? "flex items-center gap-3" : "block text-center"
+        tile
+          ? "flex h-full flex-col items-center justify-center gap-2 text-center"
+          : isCard
+            ? "flex items-center gap-3"
+            : "block text-center"
       } w-full transition-transform hover:scale-[1.02] focus-visible:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[box-shadow:0_0_0_4px_var(--ln-color-bg)]`}
       style={resolvedStyle ? { ...baseStyle, ...resolvedStyle } : baseStyle}
     >
-      {isCard ? (
+      {tile ? (
+        <>
+          {thumbnailUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={thumbnailUrl}
+              alt=""
+              width={48}
+              height={48}
+              loading="lazy"
+              className="h-12 w-12 shrink-0 rounded-full object-cover"
+            />
+          )}
+          <span className="line-clamp-3 break-words">{label}</span>
+          {description && <span className="line-clamp-2 text-sm opacity-80">{description}</span>}
+        </>
+      ) : isCard ? (
         <>
           {thumbnailUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
