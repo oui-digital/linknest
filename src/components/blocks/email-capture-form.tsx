@@ -25,7 +25,8 @@ const DISABLED_TURNSTILE = { enabled: false, siteKey: null };
  * one the server stores with the request.
  */
 export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Copy }) {
-  const { mode, pageId, pageTitle, turnstile = DISABLED_TURNSTILE, listOpen = true } = useBlockRuntime();
+  const { mode, pageId, pageTitle, turnstile = DISABLED_TURNSTILE, listOpen = true, cta } =
+    useBlockRuntime();
   const [email, setEmail] = useState("");
   const [website, setWebsite] = useState("");
   const [engaged, setEngaged] = useState(false);
@@ -59,8 +60,11 @@ export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Cop
   }
 
   return (
+    // @container: the field and button sit side by side only when the CARD is
+    // wide enough (not the viewport), so the editor's narrow phone frame and
+    // small phones stack them instead of overflowing.
     <form
-      className="w-full space-y-3 p-5"
+      className="@container relative w-full min-w-0 space-y-3 p-5"
       style={box}
       onSubmit={async (e) => {
         e.preventDefault();
@@ -87,7 +91,12 @@ export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Cop
         }
       }}
     >
-      <fieldset disabled={preview || status === "sending"} className="space-y-3">
+      {/* min-w-0: a fieldset's default minimum width is its content's natural
+          width, which pushed the button and consent text out of the card. */}
+      <fieldset
+        disabled={preview || status === "sending"}
+        className="m-0 w-full min-w-0 space-y-3 border-0 p-0"
+      >
         <legend
           className="w-full text-center"
           style={{
@@ -103,7 +112,7 @@ export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Cop
             {copy.description}
           </p>
         )}
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-col gap-2 @sm:flex-row">
           <label htmlFor={inputId} className="sr-only">
             Email address
           </label>
@@ -117,7 +126,7 @@ export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Cop
             onChange={(e) => setEmail(e.target.value)}
             onFocus={() => setEngaged(true)}
             placeholder="you@example.com"
-            className="min-w-0 flex-1 px-3 py-2 text-sm outline-none focus-visible:outline-2"
+            className="w-full min-w-0 flex-1 px-3 py-2 text-sm outline-none focus-visible:outline-2"
             style={{
               borderRadius: "var(--ln-btn-radius)",
               border: "1px solid var(--ln-border-color)",
@@ -129,14 +138,14 @@ export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Cop
           <button
             type="submit"
             disabled={!email || (!preview && !turnstileSatisfied(turnstile, token))}
-            className="px-4 py-2 text-sm font-semibold transition-opacity disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="shrink-0 whitespace-nowrap px-4 py-2 text-sm font-semibold transition-opacity disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2"
+            // The theme's call-to-action colours, like a featured link: the
+            // ordinary button colour can equal this card's background.
             style={{
               borderRadius: "var(--ln-btn-radius)",
-              backgroundColor: "var(--ln-btn-bg)",
-              color: "var(--ln-btn-text)",
-              borderWidth: "var(--ln-btn-border-w)",
-              borderColor: "var(--ln-btn-border-c)",
-              borderStyle: "solid",
+              backgroundColor: cta?.background ?? "var(--ln-color-primary)",
+              color: cta?.color ?? "var(--ln-color-bg)",
+              border: "none",
               outlineColor: "var(--ln-color-text)",
             }}
           >
@@ -144,7 +153,10 @@ export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Cop
           </button>
         </div>
         {/* Honeypot: hidden from people and assistive tech, filled by bots. */}
-        <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-0 top-0 h-px w-px overflow-hidden opacity-0"
+        >
           <label>
             Website
             <input
@@ -159,7 +171,7 @@ export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Cop
         {engaged && !preview && (
           <TurnstileWidget ref={widget} config={turnstile} action="subscribe" onToken={setToken} />
         )}
-        <p className="text-center text-xs" style={{ color: "var(--ln-color-text-muted)" }}>
+        <p className="break-words text-center text-xs" style={{ color: "var(--ln-color-text-muted)" }}>
           By subscribing you agree to receive emails from {pageTitle}. Unsubscribe anytime.{" "}
           <Link href="/privacy" className="underline">
             Privacy

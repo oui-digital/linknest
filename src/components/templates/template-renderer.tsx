@@ -17,7 +17,7 @@ interface TemplateRendererProps {
   /** "preview" renders interactive blocks inert (dashboard preview). */
   mode?: RenderMode;
   /** Server-computed values for interactive blocks (Turnstile, list state). */
-  runtime?: Omit<BlockRuntime, "mode" | "pageId" | "pageTitle">;
+  runtime?: Omit<BlockRuntime, "mode" | "pageId" | "pageTitle" | "cta">;
 }
 
 /** Server entry point: the public page and the dashboard preview route. */

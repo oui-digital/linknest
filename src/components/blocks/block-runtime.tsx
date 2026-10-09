@@ -19,6 +19,12 @@ export type BlockRuntime = {
   pageId: string;
   /** Named in the sign-up form's consent line. */
   pageTitle: string;
+  /**
+   * The theme's call-to-action colours (primary colour, contrasting label),
+   * for buttons that sit on a surface where the theme's ordinary button
+   * colours may not stand out (e.g. Clean Slate: button = card colour).
+   */
+  cta?: { background: string; color: string };
   turnstile?: TurnstileClientConfig;
   /** Whether the page's email list accepts sign-ups (plan cap not reached). */
   listOpen?: boolean;
