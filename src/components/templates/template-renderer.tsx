@@ -4,6 +4,7 @@ import type { ThemeTokens } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { PublicPageView } from "./public-page-view";
 import type { RenderMode } from "./page-parts";
+import type { BlockRuntime } from "@/components/blocks/block-runtime";
 
 type Page = InferSelectModel<typeof pages>;
 type Block = InferSelectModel<typeof blocksSchema>;
@@ -15,6 +16,8 @@ interface TemplateRendererProps {
   showReport?: boolean;
   /** "preview" renders interactive blocks inert (dashboard preview). */
   mode?: RenderMode;
+  /** Server-computed values for interactive blocks (Turnstile, list state). */
+  runtime?: Omit<BlockRuntime, "mode" | "pageId" | "pageTitle">;
 }
 
 /** Server entry point: the public page and the dashboard preview route. */
@@ -24,6 +27,7 @@ export function TemplateRenderer({
   showBadge = true,
   showReport = false,
   mode = "public",
+  runtime,
 }: TemplateRendererProps) {
   const template = getTemplate(page.templateId);
   const theme = {
@@ -39,6 +43,7 @@ export function TemplateRenderer({
       mode={mode}
       showBadge={showBadge}
       showReport={showReport}
+      runtime={runtime}
     />
   );
 }

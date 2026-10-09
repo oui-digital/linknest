@@ -155,6 +155,13 @@ Action only.
 **Schema backfills.** Some schema changes need a one-off SQL step right after
 `pnpm db:push`; they live in `scripts/backfills/`, numbered in order.
 
+**Email capture.** Double opt-in, one list per page, cap counted per
+workspace (`max_subscribers`). The lifecycle, the send-claim protocol and token
+handling are documented at the top of `src/lib/subscribers.ts`. Public routes
+`/api/subscribe*` mirror `/api/report`'s hardening; `/subscribe/confirm` and
+`/subscribe/unsubscribe` act only on POST. The daily cron retries unsent
+confirmations and purges expired rows.
+
 ## Environments
 
 Preview deployments must not touch production data or inboxes. Per Vercel

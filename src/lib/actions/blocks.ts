@@ -231,6 +231,16 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
         return { error: `Block limit reached (${limit}). Upgrade to Pro for more.` };
       }
 
+      // One sign-up form per page: one list, one place to manage it.
+      if (parsed.data.type === "email_capture") {
+        const [existing] = await tx
+          .select({ id: blocks.id })
+          .from(blocks)
+          .where(and(eq(blocks.pageId, page.id), eq(blocks.type, "email_capture")))
+          .limit(1);
+        if (existing) return { error: "This page already has an email sign-up block." };
+      }
+
       const [maxPos] = await tx
         .select({
           max: sql<number>`COALESCE(MAX(${blocks.position}), -1)`.mapWith(Number),

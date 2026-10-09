@@ -361,3 +361,51 @@ export const stripeProcessedEvents = pgTable("stripe_processed_events", {
   eventId: varchar("event_id", { length: 255 }).primaryKey(),
   processedAt: timestamp("processed_at", { mode: "date" }).defaultNow().notNull(),
 });
+
+// ─── subscribers (email capture, double opt-in) ──────────────────────────────
+// One audience per page: each page may be a different brand, so subscribing on
+// one page never adds someone to another page's list. The plan's cap counts
+// confirmed subscribers across the whole workspace. Lifecycle and the send
+// protocol are documented in src/lib/subscribers.ts.
+
+export const subscribers = pgTable(
+  "subscribers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    pageId: uuid("page_id")
+      .references(() => pages.id, { onDelete: "cascade" })
+      .notNull(),
+    // The email block they signed up through. Informational: no FK, so the
+    // record survives the block being deleted.
+    sourceBlockId: uuid("source_block_id"),
+    email: varchar("email", { length: 255 }).notNull(),
+    // Dedupe key only (src/lib/email-normalize.ts); `email` is what we send to.
+    emailCanonical: varchar("email_canonical", { length: 255 }).notNull(),
+    status: varchar("status", { length: 20 }).default("pending").notNull(), // 'pending' | 'confirmed' | 'unsubscribed'
+    // The exact consent sentence shown with the form, composed on the server.
+    consentText: text("consent_text").notNull(),
+    // Reset on every (re)subscribe; cleanup and retry windows count from here.
+    requestedAt: timestamp("requested_at", { mode: "date" }).defaultNow().notNull(),
+    // sha256 hex of the raw token, which exists only in the confirmation email.
+    confirmTokenHash: varchar("confirm_token_hash", { length: 64 }),
+    confirmTokenExpiresAt: timestamp("confirm_token_expires_at", { mode: "date" }),
+    // Send claim: the attempt that currently owns the confirmation email.
+    confirmSendAttemptId: uuid("confirm_send_attempt_id"),
+    confirmSendClaimedAt: timestamp("confirm_send_claimed_at", { mode: "date" }),
+    confirmEmailSentAt: timestamp("confirm_email_sent_at", { mode: "date" }),
+    confirmEmailAttempts: integer("confirm_email_attempts").default(0).notNull(),
+    confirmedAt: timestamp("confirmed_at", { mode: "date" }),
+    unsubscribedAt: timestamp("unsubscribed_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("subscribers_page_canonical_idx").on(table.pageId, table.emailCanonical),
+    uniqueIndex("subscribers_confirm_token_idx").on(table.confirmTokenHash),
+    index("subscribers_ws_status_idx").on(table.workspaceId, table.status),
+    index("subscribers_pending_unsent_idx").on(table.status, table.confirmEmailSentAt),
+  ],
+);

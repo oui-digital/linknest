@@ -17,6 +17,8 @@ import type { TurnstileClientConfig } from "@/lib/turnstile-types";
 export type BlockRuntime = {
   mode: "public" | "preview";
   pageId: string;
+  /** Named in the sign-up form's consent line. */
+  pageTitle: string;
   turnstile?: TurnstileClientConfig;
   /** Whether the page's email list accepts sign-ups (plan cap not reached). */
   listOpen?: boolean;

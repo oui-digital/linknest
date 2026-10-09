@@ -14,6 +14,13 @@ import { stripe } from "@/lib/stripe";
 import { getLimit, type PlanId } from "@/lib/entitlements";
 import { revalidateTag } from "next/cache";
 import { publicPageTag } from "@/lib/cache-tags";
+import {
+  claimUnsentConfirmations,
+  deliverConfirmation,
+  purgeStalePending,
+  purgeUnsubscribed,
+} from "@/lib/subscribers";
+import { sendConfirmation } from "@/lib/subscribe-mail";
 
 /**
  * Daily reconciliation.
@@ -47,6 +54,10 @@ export async function GET(request: NextRequest) {
     urlsScanned: 0,
     pagesFlagged: 0,
     eventsPruned: 0,
+    confirmationsRetried: 0,
+    confirmationsSent: 0,
+    pendingSubscribersPurged: 0,
+    unsubscribedPurged: 0,
   };
 
   try {
@@ -56,6 +67,16 @@ export async function GET(request: NextRequest) {
     summary.urlsScanned = scan.scanned;
     summary.pagesFlagged = scan.flagged;
     summary.eventsPruned = await pruneProcessedEvents();
+
+    // Confirmation emails that never went out: up to three attempts within
+    // 48 hours of the request, at most once per run of this daily job.
+    const claims = await claimUnsentConfirmations(db);
+    summary.confirmationsRetried = claims.length;
+    for (const claim of claims) {
+      if (await deliverConfirmation(db, claim, sendConfirmation)) summary.confirmationsSent++;
+    }
+    summary.pendingSubscribersPurged = await purgeStalePending(db);
+    summary.unsubscribedPurged = await purgeUnsubscribed(db);
   } catch (error) {
     console.error("[cron/reconcile] Failed:", error);
     return NextResponse.json(
