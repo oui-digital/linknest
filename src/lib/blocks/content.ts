@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SOCIAL_PLATFORM_IDS } from "@/lib/social-platforms";
 
 /**
  * Block types and the shape of each type's `content` payload.
@@ -19,7 +20,7 @@ import { z } from "zod";
  * plan-checked by validateStyleOverrides() in src/lib/actions/block-validation.ts.
  */
 
-export const BLOCK_TYPES = ["link", "header", "text", "divider", "image"] as const;
+export const BLOCK_TYPES = ["link", "header", "text", "divider", "image", "socials"] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 export const blockTypeSchema = z.enum(BLOCK_TYPES);
 
@@ -45,6 +46,26 @@ const imageShape = {
   alt: z.string().max(255).optional(),
 };
 
+export const MAX_SOCIAL_ITEMS = 20;
+
+export const socialItemSchema = z.strictObject({
+  platform: z.enum(SOCIAL_PLATFORM_IDS),
+  url: z.string().min(1).max(2048),
+  label: z.string().max(40).optional(),
+});
+export type SocialItem = z.infer<typeof socialItemSchema>;
+
+// Reading keeps every valid icon and drops only the invalid ones, so one bad
+// entry cannot empty the whole row.
+const socialItemsReader = z
+  .array(z.unknown())
+  .transform((items) =>
+    items.flatMap((item) => {
+      const parsed = socialItemSchema.safeParse(item);
+      return parsed.success ? [parsed.data] : [];
+    }),
+  );
+
 const readStyle = { styleOverrides: z.object(styleOverridesShape).optional() };
 const writeStyle = { styleOverrides: z.strictObject(styleOverridesShape).optional() };
 
@@ -55,6 +76,7 @@ export const blockContentReaders = {
   text: z.object({ ...textShape, ...readStyle }),
   divider: z.object({ ...dividerShape, ...readStyle }),
   image: z.object({ ...imageShape, ...readStyle }),
+  socials: z.object({ items: socialItemsReader.optional(), ...readStyle }),
 };
 
 /** Strict: unknown keys are rejected. For validating writes. */
@@ -64,6 +86,10 @@ export const blockContentWriters = {
   text: z.strictObject({ ...textShape, ...writeStyle }),
   divider: z.strictObject({ ...dividerShape, ...writeStyle }),
   image: z.strictObject({ ...imageShape, ...writeStyle }),
+  socials: z.strictObject({
+    items: z.array(socialItemSchema).max(MAX_SOCIAL_ITEMS).optional(),
+    ...writeStyle,
+  }),
 };
 
 export type BlockContent<T extends BlockType> = z.infer<(typeof blockContentReaders)[T]>;

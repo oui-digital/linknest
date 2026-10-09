@@ -57,3 +57,20 @@ describe("parseBlockContent", () => {
     expect(parseBlockContent("carousel", { text: "x" })).toEqual({});
   });
 });
+
+describe("socials content", () => {
+  const item = { platform: "instagram", url: "https://www.instagram.com/a/" };
+
+  it("writer accepts known platforms and rejects unknown ones or too many items", () => {
+    expect(blockContentWriters.socials.safeParse({ items: [item] }).success).toBe(true);
+    expect(blockContentWriters.socials.safeParse({ items: [{ ...item, platform: "mastodon" }] }).success).toBe(false);
+    expect(blockContentWriters.socials.safeParse({ items: Array(21).fill(item) }).success).toBe(false);
+    expect(blockContentWriters.socials.safeParse({ items: [{ ...item, extra: 1 }] }).success).toBe(false);
+  });
+
+  it("reader keeps the valid icons when one is broken", () => {
+    expect(parseBlockContent("socials", { items: [item, { platform: "nope", url: "x" }] })).toEqual({
+      items: [item],
+    });
+  });
+});

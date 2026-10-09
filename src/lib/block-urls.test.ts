@@ -19,3 +19,27 @@ describe("extractScannableUrls", () => {
     ).toEqual([]);
   });
 });
+
+describe("extractScannableUrls for social icons", () => {
+  it("returns every icon's destination", () => {
+    expect(
+      extractScannableUrls({
+        type: "socials",
+        url: null,
+        content: {
+          items: [
+            { platform: "instagram", url: "https://www.instagram.com/a/" },
+            { platform: "x", url: "https://x.com/a" },
+            { platform: "x", url: "https://x.com/a" },
+          ],
+        },
+      }),
+    ).toEqual(["https://www.instagram.com/a/", "https://x.com/a"]);
+  });
+
+  it("ignores malformed items rather than failing", () => {
+    expect(
+      extractScannableUrls({ type: "socials", url: null, content: { items: [{ nope: 1 }, { platform: "x", url: "https://x.com/b" }] } }),
+    ).toEqual(["https://x.com/b"]);
+  });
+});

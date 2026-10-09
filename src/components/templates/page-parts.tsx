@@ -217,7 +217,9 @@ export function BlockLayout({
       style={{
         gap: "var(--ln-block-gap)",
         alignItems: layout === "left-aligned" ? "flex-start" : "center",
-      }}
+        // Rows of inline items (social icons) follow the column's alignment.
+        ["--ln-justify" as string]: layout === "left-aligned" ? "flex-start" : "center",
+      } as React.CSSProperties}
     >
       {children}
     </div>

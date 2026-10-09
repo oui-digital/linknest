@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { blocks, pages, pendingUrlScans } from "@/lib/db/schema";
 import { applyBlockUpdate, applyLiveEdit } from "@/lib/live-edit";
 import { publishPageCore, PUBLISH_STALE_ERROR } from "@/lib/publish";
+import { extractScannableUrls } from "@/lib/block-urls";
 import {
   createTestDb,
   fakeCheckUrls,
@@ -282,5 +283,87 @@ describe("concurrent edits to one block (two connections)", () => {
 
     expect(result.ok).toBe(true);
     expect(check.calls).toHaveLength(1);
+  });
+});
+
+describe("destinations carried inside block content (social icons)", () => {
+  const FLAGGED = "https://x.com/flagged";
+  const SAFE = "https://www.instagram.com/fine/";
+  const socials = (...urls: string[]) => ({
+    items: urls.map((url) => ({ platform: url.includes("x.com") ? "x" : "instagram", url })),
+  });
+
+  it("refuses a content patch that adds a flagged icon to a live page", async () => {
+    const { page } = await seedOwnedPage(db, { isPublished: true });
+    const [block] = await db
+      .insert(blocks)
+      .values({ pageId: page.id, type: "socials", position: 0, content: socials(SAFE) })
+      .returning();
+    const check = fakeCheckUrls([FLAGGED]);
+
+    const result = await applyBlockUpdate(db, {
+      pageId: page.id,
+      blockId: block.id,
+      patch: { content: socials(SAFE, FLAGGED) },
+      checkUrls: check,
+    });
+
+    expect(result.ok).toBe(false);
+    // Only the added destination was scanned.
+    expect(check.calls).toEqual([[FLAGGED]]);
+    const [after] = await db.select().from(blocks).where(eq(blocks.id, block.id));
+    expect(after.content).toEqual(socials(SAFE));
+  });
+
+  it("refuses creating a populated icon row with a flagged link on a live page", async () => {
+    const { page } = await seedOwnedPage(db, { isPublished: true });
+    const content = socials(SAFE, FLAGGED);
+
+    const result = await applyLiveEdit(db, {
+      pageId: page.id,
+      introducedUrls: extractScannableUrls({ type: "socials", url: null, content }),
+      checkUrls: fakeCheckUrls([FLAGGED]),
+      write: async (tx) => {
+        const [row] = await tx
+          .insert(blocks)
+          .values({ pageId: page.id, type: "socials", position: 0, content })
+          .returning();
+        return row;
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(await db.select().from(blocks).where(eq(blocks.pageId, page.id))).toHaveLength(0);
+  });
+
+  it("rescans every icon when a hidden row is shown", async () => {
+    const { page } = await seedOwnedPage(db, { isPublished: true });
+    const [block] = await db
+      .insert(blocks)
+      .values({ pageId: page.id, type: "socials", position: 0, isVisible: false, content: socials(SAFE, FLAGGED) })
+      .returning();
+
+    const result = await applyBlockUpdate(db, {
+      pageId: page.id,
+      blockId: block.id,
+      patch: { isVisible: true },
+      checkUrls: fakeCheckUrls([FLAGGED]),
+    });
+
+    expect(result.ok).toBe(false);
+    const [after] = await db.select().from(blocks).where(eq(blocks.id, block.id));
+    expect(after.isVisible).toBe(false);
+  });
+
+  it("refuses to publish a draft whose icon row holds a flagged link", async () => {
+    const { page } = await seedOwnedPage(db);
+    await db
+      .insert(blocks)
+      .values({ pageId: page.id, type: "socials", position: 0, content: socials(FLAGGED) });
+
+    const result = await publishPageCore(db, page.id, { checkUrls: fakeCheckUrls([FLAGGED]) });
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.flaggedUrls).toEqual([FLAGGED]);
   });
 });

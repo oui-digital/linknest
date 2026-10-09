@@ -27,10 +27,11 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { createBlock, deleteBlock, reorderBlocks } from "@/lib/actions/blocks";
-import { parseBlockContent, type BlockType } from "@/lib/blocks/content";
+import { parseBlockContent, type BlockType, type SocialItem } from "@/lib/blocks/content";
 import type { SaveCoordinator, SaveStatus } from "./save-coordinator";
 import { ImageUpload } from "./image-upload";
 import { applyBlockEdit, restoreBlock } from "./block-edit";
+import { SocialsEditor } from "./socials-editor";
 
 type Block = InferSelectModel<typeof blocksSchema>;
 
@@ -51,6 +52,7 @@ const BLOCK_PICKER: { type: BlockType; label: string }[] = [
   { type: "text", label: "Text" },
   { type: "divider", label: "Divider" },
   { type: "image", label: "Image" },
+  { type: "socials", label: "Social icons" },
 ];
 
 const DEFAULT_LABELS: Partial<Record<BlockType, string>> = {
@@ -286,6 +288,11 @@ export function BlockList({
           No blocks yet. Add your first link!
         </p>
       )}
+      {sorted.length > 0 && !sorted.some((b) => b.type === "socials") && (
+        <p className="text-xs text-gray-400">
+          Tip: add Social icons and drag them under your bio.
+        </p>
+      )}
 
       {/* Add block buttons */}
       <div className="space-y-2 pt-2">
@@ -427,7 +434,9 @@ function SortableBlockItem({
 
         {/* Label */}
         <span className="flex-1 truncate text-sm">
-          {block.label || block.url || block.type}
+          {block.type === "socials"
+            ? `Social icons · ${((content.items as SocialItem[] | undefined) ?? []).length}`
+            : block.label || block.url || block.type}
         </span>
 
         {/* Save state */}
@@ -549,6 +558,18 @@ function SortableBlockItem({
                 className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
               />
             </div>
+          )}
+          {block.type === "socials" && (
+            <SocialsEditor
+              items={(content.items as SocialItem[] | undefined) ?? []}
+              onChange={(items) =>
+                onUpdate(
+                  block.id,
+                  { content: { ...content, items } } as Partial<Block>,
+                  { immediate: true },
+                )
+              }
+            />
           )}
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-gray-500">Visible</label>
