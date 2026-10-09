@@ -7,6 +7,8 @@ import { DividerBlock } from "./divider-block";
 import { ImageBlock } from "./image-block";
 import { SocialsBlock } from "./socials-block";
 import { EmbedBlock } from "./embed-block";
+import { EmailCaptureForm } from "./email-capture-form";
+import { parseBlockContent } from "@/lib/blocks/content";
 
 type Block = InferSelectModel<typeof blocks>;
 
@@ -42,6 +44,13 @@ export function BlockRenderer({
       return <SocialsBlock block={block} />;
     case "embed":
       return <EmbedBlock block={block} mode={mode} />;
+    case "email_capture":
+      return (
+        <EmailCaptureForm
+          blockId={block.id}
+          copy={parseBlockContent("email_capture", block.content)}
+        />
+      );
     default:
       return null;
   }

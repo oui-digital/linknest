@@ -27,6 +27,7 @@ export const FREE_FEATURES = [
   "3 button styles",
   `${PLAN_MATRIX.free.analytics_days}-day views, link clicks, top links & sources`,
   `${PLAN_MATRIX.free.max_asset_bytes / 1_000_000} MB storage`,
+  `Email sign-ups (up to ${PLAN_MATRIX.free.max_subscribers} subscribers)`,
 ];
 
 export const PRO_FEATURES = [
@@ -40,5 +41,6 @@ export const PRO_FEATURES = [
   `${PLAN_MATRIX.pro.analytics_days}-day views, link clicks, top links & sources`,
   `${PLAN_MATRIX.pro.max_asset_bytes / 1_000_000} MB storage`,
   "Remove LinkNest badge",
+  "Unlimited email subscribers + CSV export",
   "Email support",
 ];

@@ -20,6 +20,9 @@ import {
 import { publicPageTag } from "@/lib/cache-tags";
 import { SITE_URL } from "@/lib/site";
 import { isInIndexProbation } from "@/lib/indexing";
+import { getTurnstileClientConfig } from "@/lib/turnstile";
+import { countConfirmed } from "@/lib/subscribers";
+import { getLimit, type PlanId } from "@/lib/entitlements";
 
 interface Props {
   params: Promise<{ username: string }>;
@@ -148,6 +151,17 @@ export default async function PublicPage({ params }: Props) {
   const isPro = plan === "pro";
   const showBadge = !(isPro && theme?.hideBranding);
 
+  // Only pages with a sign-up form pay for the list-state query.
+  const hasEmailForm = pageBlocks.some((b) => b.type === "email_capture");
+  const runtime = hasEmailForm
+    ? {
+        turnstile: getTurnstileClientConfig(),
+        listOpen:
+          (await countConfirmed(db, page.workspaceId)) <
+          getLimit(plan as PlanId, "max_subscribers"),
+      }
+    : undefined;
+
   return (
     <>
       <TemplateRenderer
@@ -155,6 +169,7 @@ export default async function PublicPage({ params }: Props) {
         blocks={pageBlocks}
         showBadge={showBadge}
         showReport
+        runtime={runtime}
       />
       <PageBeacon slug={page.slug} />
     </>

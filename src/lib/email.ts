@@ -256,3 +256,58 @@ export async function sendExistingAccountNotice({ to }: { to: string }) {
     `,
   });
 }
+
+/**
+ * Double opt-in confirmation for a page's email list. Sent on behalf of the
+ * page owner, so it says plainly who is asking. Click tracking stays off for
+ * the same reason as the auth emails: scanners that prefetch tracked links
+ * would otherwise reach the confirm page (which only confirms on a POST, but
+ * the link must still be the real one).
+ *
+ * RFC 8058 List-Unsubscribe headers only matter if LinkNest ever sends
+ * campaigns for owners; whether Emailit accepts custom headers is unverified.
+ * The body carries the unsubscribe link.
+ */
+export async function sendSubscribeConfirmationEmail({
+  to,
+  pageTitle,
+  slug,
+  confirmUrl,
+  unsubscribeUrl,
+}: {
+  to: string;
+  pageTitle: string;
+  slug: string;
+  confirmUrl: string;
+  unsubscribeUrl: string;
+}) {
+  const title = escapeHtml(pageTitle);
+  const handle = escapeHtml(slug);
+  await sendEmail({
+    to,
+    subject: `Confirm your subscription to ${pageTitle}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+        <h2 style="margin-bottom: 24px;">Confirm your subscription</h2>
+        <p style="color: #555; line-height: 1.6;">
+          You asked to get emails from <strong>${title}</strong>
+          (linknest.click/@${handle}). Confirm below to join the list.
+          This link expires in 48 hours.
+        </p>
+        <a href="${escapeHtml(confirmUrl)}"
+           style="display: inline-block; margin: 24px 0; padding: 12px 32px;
+                  background: #000; color: #fff; text-decoration: none;
+                  border-radius: 8px; font-weight: 600;">
+          Confirm subscription
+        </a>
+        <p style="color: #999; font-size: 13px; margin-top: 32px;">
+          If you didn't ask for this, ignore this email: nothing happens without
+          your confirmation.
+        </p>
+        <p style="color: #999; font-size: 13px;">
+          <a href="${escapeHtml(unsubscribeUrl)}" style="color: #999;">Unsubscribe</a>
+        </p>
+      </div>
+    `,
+  });
+}

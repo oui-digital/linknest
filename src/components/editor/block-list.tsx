@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
 import type { InferSelectModel } from "drizzle-orm";
 import type { blocks as blocksSchema } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
@@ -56,6 +57,7 @@ const BLOCK_PICKER: { type: BlockType; label: string }[] = [
   { type: "image", label: "Image" },
   { type: "socials", label: "Social icons" },
   { type: "embed", label: "Embed" },
+  { type: "email_capture", label: "Email sign-up" },
 ];
 
 const DEFAULT_LABELS: Partial<Record<BlockType, string>> = {
@@ -444,7 +446,9 @@ function SortableBlockItem({
         <span className="flex-1 truncate text-sm">
           {block.type === "socials"
             ? `Social icons · ${((content.items as SocialItem[] | undefined) ?? []).length}`
-            : block.label || block.url || block.type}
+            : block.type === "email_capture"
+              ? `Email sign-up · ${(content.heading as string | undefined) || "Get updates by email"}`
+              : block.label || block.url || block.type}
         </span>
 
         {/* Save state */}
@@ -628,6 +632,38 @@ function SortableBlockItem({
                 placeholder="Write a paragraph…"
                 className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
               />
+            </div>
+          )}
+          {block.type === "email_capture" && (
+            <div className="space-y-3">
+              {(
+                [
+                  ["heading", "Heading", "Get updates by email", 80],
+                  ["description", "Description", "What subscribers will get", 200],
+                  ["buttonLabel", "Button label", "Subscribe", 40],
+                  ["successMessage", "After signing up", "Almost there: check your inbox and confirm your subscription.", 200],
+                ] as const
+              ).map(([key, label, placeholder, max]) => (
+                <div key={key}>
+                  <label className="text-xs font-medium text-gray-500">{label}</label>
+                  <input
+                    type="text"
+                    value={(content[key] as string | undefined) ?? ""}
+                    onChange={(e) =>
+                      onUpdate(block.id, {}, { contentPatch: { [key]: e.target.value || undefined } })
+                    }
+                    maxLength={max}
+                    placeholder={placeholder}
+                    className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
+                  />
+                </div>
+              ))}
+              <p className="text-[11px] leading-relaxed text-gray-400">
+                People confirm by email before they join your list. Each page has its own list.{" "}
+                <Link href="/dashboard/subscribers" className="underline hover:text-gray-600">
+                  View subscribers
+                </Link>
+              </p>
             </div>
           )}
           {block.type === "embed" && (

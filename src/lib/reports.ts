@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
-import { entitlementOverrides, pageReports, workspaces } from "@/lib/db/schema";
-import type { Db, Tx } from "@/lib/db/types";
-import { PLAN_OVERRIDE_FEATURE, resolvePlanOverride } from "@/lib/queries";
+import { pageReports } from "@/lib/db/schema";
+import type { Db } from "@/lib/db/types";
+import { effectivePlan } from "@/lib/queries";
 import {
   REPORT_TAKEDOWN_SOURCE,
   currentReviewEpoch,
@@ -28,22 +28,6 @@ export type RecordReportResult =
       plan: string;
       page: PageRef;
     };
-
-async function effectivePlan(tx: Tx, workspaceId: string): Promise<string> {
-  const [row] = await tx
-    .select({ plan: workspaces.plan, override: entitlementOverrides.value })
-    .from(workspaces)
-    .leftJoin(
-      entitlementOverrides,
-      and(
-        eq(entitlementOverrides.workspaceId, workspaces.id),
-        eq(entitlementOverrides.feature, PLAN_OVERRIDE_FEATURE),
-      ),
-    )
-    .where(eq(workspaces.id, workspaceId))
-    .limit(1);
-  return resolvePlanOverride(row?.override) ?? row?.plan ?? "free";
-}
 
 /**
  * File a report and, when enabled, apply the report-threshold takedown — all

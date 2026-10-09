@@ -11,6 +11,8 @@ export const PLAN_MATRIX = {
     analytics_days: 7,
     remove_badge: false,
     max_asset_bytes: 50_000_000, // 50MB total
+    max_subscribers: 100, // confirmed email subscribers, across all pages
+    subscriber_export: false,
   },
   pro: {
     max_pages: 5,
@@ -22,6 +24,8 @@ export const PLAN_MATRIX = {
     analytics_days: 90,
     remove_badge: true,
     max_asset_bytes: 500_000_000, // 500MB total
+    max_subscribers: Number.POSITIVE_INFINITY,
+    subscriber_export: true, // CSV download
   },
 } as const;
 

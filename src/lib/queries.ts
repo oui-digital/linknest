@@ -6,6 +6,7 @@ import {
   entitlementOverrides,
 } from "@/lib/db/schema";
 import { eq, and, asc } from "drizzle-orm";
+import type { DbOrTx } from "@/lib/db/types";
 import { normalizeSlug } from "@/lib/slugs";
 
 /**
@@ -109,4 +110,24 @@ export async function isSlugTaken(slug: string): Promise<boolean> {
     .limit(1);
 
   return Boolean(takenWorkspace);
+}
+
+/**
+ * A workspace's effective plan (comped overrides applied), read through the
+ * given handle so it can run inside a transaction under a lock.
+ */
+export async function effectivePlan(executor: DbOrTx, workspaceId: string): Promise<string> {
+  const [row] = await executor
+    .select({ plan: workspaces.plan, override: entitlementOverrides.value })
+    .from(workspaces)
+    .leftJoin(
+      entitlementOverrides,
+      and(
+        eq(entitlementOverrides.workspaceId, workspaces.id),
+        eq(entitlementOverrides.feature, PLAN_OVERRIDE_FEATURE),
+      ),
+    )
+    .where(eq(workspaces.id, workspaceId))
+    .limit(1);
+  return resolvePlanOverride(row?.override) ?? row?.plan ?? "free";
 }

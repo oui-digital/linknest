@@ -99,10 +99,21 @@ Public pages are server-rendered at the URL `/@username`. The page applies the u
 
 | Data point | Service | Notes |
 |---|---|---|
-| Page views on public pages | PostHog | Automatic `$pageview` events |
-| Link clicks on public pages | PostHog | Custom `link_click` events with block ID, URL, and label |
+| Page views on public pages | PostHog | `$pageview` events, with the referring site's domain only (from `document.referrer`; never a path or query) |
+| Link clicks on public pages | PostHog | `link_click` events with block ID, URL, and label (includes social icons, the announcement banner, and "Open on…" links under embeds) |
+| Embed play presses | PostHog | `embed_play` events with block ID |
 
-PostHog is configured with `persistence: "memory"` and `autocapture: false`. This means: no cookies are set by PostHog, no data is stored in the visitor's browser, and only the two event types listed above are captured. All analytics state is held in JavaScript memory only and is discarded when the page is closed or navigated away from.
+*(Updated October 2026.)* The public page loads no analytics SDK. A small first-party beacon posts events to LinkNest's own `/api/collect` endpoint, which forwards them to PostHog with a random identifier generated per event, without cookies, browser storage or the visitor's IP address (`disableGeoip`). Events cannot be linked to each other or to a visitor.
+
+### Subscriber data (email sign-up forms)
+
+| Data point | Where stored | Notes |
+|---|---|---|
+| Email address, page, consent sentence shown, request/confirmation/unsubscribe times | `subscribers` table | Double opt-in: a row is `pending` until the confirmation link is used. One list per page. |
+| Confirmation token | `subscribers.confirm_token_hash` | SHA-256 hash only; the raw token exists only in the email. Expires after 48 hours; cleared on confirm or unsubscribe. |
+| Unsubscribe link | Not stored | HMAC of the subscriber id under `AUTH_SECRET`. |
+
+The visitor's IP is used only for rate limiting and is not stored. Unconfirmed requests are deleted 7 days after the request; unsubscribed rows 30 days after unsubscribing; owners can delete any row. Free plans hold up to 100 confirmed subscribers; Pro is unlimited and can export CSV.
 
 ### Technical data (IP, device, logs)
 
@@ -137,6 +148,7 @@ No data is purchased or received from third-party data brokers. The only externa
 
 - **No explicit data retention policy is implemented in the codebase.** User data, pages, and blocks persist indefinitely unless manually deleted by the user through the editor.
 - **Verification tokens** expire after 1 hour and are deleted upon use.
+- **Email sign-ups**: unconfirmed requests are deleted 7 days after the request; unsubscribed addresses 30 days after unsubscribing (daily job).
 - **Stripe processed events** (deduplication records) are stored indefinitely.
 - **Rate-limit counters** in Redis expire automatically (1 minute to 24 hours depending on the limit type).
 - **PostHog and Sentry** retain data according to their own retention policies (not controlled by LinkNest).

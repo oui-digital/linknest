@@ -32,6 +32,12 @@ export default async function DashboardPage() {
           <h1 className="text-lg font-bold">LinkNest</h1>
           <div className="flex items-center gap-4">
             <Link
+              href="/dashboard/subscribers"
+              className="text-sm text-gray-500 hover:text-gray-800"
+            >
+              Subscribers
+            </Link>
+            <Link
               href="/dashboard/billing"
               className="text-sm text-gray-500 hover:text-gray-800"
             >

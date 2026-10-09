@@ -88,6 +88,19 @@ export const signupIpRateLimit = redis
   : null;
 
 /**
+ * Email sign-ups per network: 10 per hour per abuse key (IPv4 address or IPv6
+ * /64), across all pages. Per-address sending is limited separately with
+ * emailRateLimit keyed "subscribe:<canonical address>".
+ */
+export const subscribeRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(10, "1 h"),
+      prefix: "rl:subscribe",
+    })
+  : null;
+
+/**
  * Outbound auth email per network: 30 magic-link or verification emails per
  * hour per abuse key, for existing users too. Deliberately looser than the
  * signup limit and kept separate from it.

@@ -27,6 +27,7 @@ const SYSTEM_SLUGS = new Set([
   "favicon.ico",
   "_next",
   "static",
+  "subscribe",
 ]);
 
 // High-value slugs — reserved for future manual assignment or premium tiers.

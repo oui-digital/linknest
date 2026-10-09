@@ -161,6 +161,29 @@ export default function PrivacyPage() {
                 the application level.
               </p>
             </div>
+
+            <h3 className="mt-6 text-[17px] font-medium text-indigo">
+              e. Subscriber Information
+            </h3>
+            <div className="mt-3 space-y-4 text-[15px] leading-relaxed text-slate">
+              <p>
+                When a visitor signs up through an email sign-up form on a
+                published page, we collect:
+              </p>
+              <ul className="ml-6 list-disc space-y-2">
+                <li>The email address entered</li>
+                <li>The page signed up on, and the consent sentence shown with the form</li>
+                <li>When the request was made, confirmed and, if applicable, unsubscribed</li>
+              </ul>
+              <p>
+                Nobody is added to a list until they confirm by clicking the link
+                in the confirmation email. Each page has its own list: signing up
+                on one page does not add anyone to another page&apos;s list, even
+                if the same account manages both. The visitor&apos;s IP address is
+                used briefly to limit abuse and is not stored. Every confirmation
+                email includes an unsubscribe link.
+              </p>
+            </div>
           </section>
 
           {/* 3. How We Use Information */}
@@ -176,6 +199,11 @@ export default function PrivacyPage() {
                 <li>Display user-created public pages</li>
                 <li>Process subscriptions and manage billing status</li>
                 <li>Monitor usage and performance of public pages</li>
+                <li>
+                  Send email sign-up confirmations and make each page&apos;s
+                  subscriber list available to that page&apos;s owner. Page
+                  owners are responsible for how they contact their subscribers.
+                </li>
                 <li>
                   Detect, prevent, and respond to abuse, fraud, or technical
                   issues
@@ -203,9 +231,10 @@ export default function PrivacyPage() {
                 <li>Custom URL slug and SEO metadata</li>
               </ul>
               <p>
-                Unpublished pages, dashboards, analytics, billing information,
-                and account settings are private and accessible only to the
-                authenticated user.
+                Unpublished pages, dashboards, analytics, subscriber lists,
+                billing information, and account settings are private and
+                accessible only to the authenticated user. A subscriber list is
+                visible only to the owner of the page it belongs to.
               </p>
             </div>
           </section>
@@ -259,7 +288,8 @@ export default function PrivacyPage() {
                 <li>Neon (PostgreSQL database hosting)</li>
                 <li>Cloudflare R2 (image and file storage)</li>
                 <li>Google OAuth and GitHub OAuth (authentication)</li>
-                <li>Emailit (transactional email delivery)</li>
+                <li>Emailit (transactional email delivery, including sign-up confirmations)</li>
+                <li>Cloudflare Turnstile (bot protection on forms)</li>
                 <li>Stripe (payment processing and billing)</li>
                 <li>PostHog (analytics for public pages)</li>
                 <li>Sentry (error monitoring and performance diagnostics)</li>
@@ -320,6 +350,15 @@ export default function PrivacyPage() {
                   deleted by the user (where deletion is available)
                 </li>
                 <li>Verification tokens expire automatically</li>
+                <li>
+                  Email sign-ups that are never confirmed are deleted 7 days
+                  after the request
+                </li>
+                <li>
+                  Confirmed subscribers are kept until they unsubscribe or the
+                  page owner deletes them; after unsubscribing, the address stays
+                  visible to the page owner for 30 days and is then deleted
+                </li>
                 <li>Rate-limit data expires automatically</li>
                 <li>
                   Analytics and error data retention is controlled by third-party
@@ -374,6 +413,9 @@ export default function PrivacyPage() {
               <p>
                 At this time, account deletion and data export tools are not
                 implemented. Requests must be made by contacting us directly.
+                Subscribers can leave a list at any time with the unsubscribe
+                link in the confirmation email, or ask us to delete their
+                address from any list.
               </p>
             </div>
           </section>

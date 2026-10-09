@@ -20,7 +20,16 @@ import { SOCIAL_PLATFORM_IDS } from "@/lib/social-platforms";
  * plan-checked by validateStyleOverrides() in src/lib/actions/block-validation.ts.
  */
 
-export const BLOCK_TYPES = ["link", "header", "text", "divider", "image", "socials", "embed"] as const;
+export const BLOCK_TYPES = [
+  "link",
+  "header",
+  "text",
+  "divider",
+  "image",
+  "socials",
+  "embed",
+  "email_capture",
+] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 export const blockTypeSchema = z.enum(BLOCK_TYPES);
 
@@ -88,6 +97,15 @@ const embedShape = {
   coverUrl: z.string().max(2048).optional(),
 };
 
+// Copy shown on the sign-up form. Everything else (consent text, list
+// state) is decided by the server.
+const emailCaptureShape = {
+  heading: z.string().max(80).optional(),
+  description: z.string().max(200).optional(),
+  buttonLabel: z.string().max(40).optional(),
+  successMessage: z.string().max(200).optional(),
+};
+
 const readStyle = { styleOverrides: z.object(styleOverridesShape).optional() };
 const writeStyle = { styleOverrides: z.strictObject(styleOverridesShape).optional() };
 
@@ -100,6 +118,7 @@ export const blockContentReaders = {
   image: z.object({ ...imageShape, ...readStyle }),
   socials: z.object({ items: socialItemsReader.optional(), ...readStyle }),
   embed: z.object({ ...embedShape, ...readStyle }),
+  email_capture: z.object({ ...emailCaptureShape, ...readStyle }),
 };
 
 /** Strict: unknown keys are rejected. For validating writes. */
@@ -114,6 +133,7 @@ export const blockContentWriters = {
     ...writeStyle,
   }),
   embed: z.strictObject({ ...embedShape, ...writeStyle }),
+  email_capture: z.strictObject({ ...emailCaptureShape, ...writeStyle }),
 };
 
 export type BlockContent<T extends BlockType> = z.infer<(typeof blockContentReaders)[T]>;

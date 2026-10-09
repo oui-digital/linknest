@@ -45,13 +45,24 @@ export function PublicPageView({
   mode: RenderMode;
   showBadge: boolean;
   showReport: boolean;
-  runtime?: Omit<BlockRuntime, "mode" | "pageId">;
+  runtime?: Omit<BlockRuntime, "mode" | "pageId" | "pageTitle" | "cta">;
   frameClassName?: string;
 }) {
   const layout = getTemplate(page.templateId).layout;
 
   return (
-    <BlockRuntimeProvider value={{ ...runtime, mode, pageId: page.id }}>
+    <BlockRuntimeProvider
+      value={{
+        ...runtime,
+        mode,
+        pageId: page.id,
+        pageTitle: page.title,
+        cta: {
+          background: theme.colorPrimary,
+          color: getContrastColor(theme.colorPrimary),
+        },
+      }}
+    >
       <PageFrame
         theme={theme}
         className={frameClassName}

@@ -22,6 +22,7 @@ const APP_ROUTES = new Set([
   "/status",
   "/onboarding",
   "/check-email",
+  "/subscribe",
 ]);
 
 function isAppRoute(pathname: string): boolean {
