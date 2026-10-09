@@ -17,6 +17,24 @@ import { useEffect } from "react";
  * `data-link-url` (for elements that are not anchors) and `data-link-event`
  * (`embed_play`; everything else is a `link_click`).
  */
+/**
+ * Whether a click event is a real activation. A middle click only opens
+ * links: on a button (an embed's play button) it does nothing, so it must not
+ * count as a play.
+ */
+export function isTrackableActivation({
+  type,
+  button,
+  isAnchor,
+}: {
+  type: string;
+  button: number;
+  isAnchor: boolean;
+}): boolean {
+  if (type === "click") return true;
+  return type === "auxclick" && button === 1 && isAnchor;
+}
+
 export function PageBeacon({ slug }: { slug: string }) {
   useEffect(() => {
     const send = (payload: Record<string, unknown>) => {
@@ -48,11 +66,19 @@ export function PageBeacon({ slug }: { slug: string }) {
     // the context menu is not a visit. The previous `pointerdown` listener
     // counted right-clicks and missed Enter on a focused link entirely.
     const onActivate = (event: MouseEvent) => {
-      if (event.type === "auxclick" && event.button !== 1) return;
       const el = (event.target as Element | null)?.closest<HTMLElement>(
         "[data-link-id]",
       );
       if (!el) return;
+      if (
+        !isTrackableActivation({
+          type: event.type,
+          button: event.button,
+          isAnchor: el instanceof HTMLAnchorElement,
+        })
+      ) {
+        return;
+      }
 
       const label = (el.dataset.linkLabel ?? el.textContent ?? "")
         .trim()

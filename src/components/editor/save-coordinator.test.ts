@@ -190,3 +190,67 @@ describe("SaveCoordinator", () => {
     expect(save).toHaveBeenCalledWith(page, { bio: "typed, then navigated away" });
   });
 });
+
+describe("SaveCoordinator under concurrent edits", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  // Regression: an entity first edited while flushAll() was running was not
+  // in its snapshot, so the publish barrier passed with unsaved work.
+  it("does not resolve flushAll while an entity edited during the flush is unsaved", async () => {
+    const a: SaveEntity = { kind: "block", id: "a" };
+    const b: SaveEntity = { kind: "block", id: "b" };
+    const first = deferred<SaveOutcome>();
+    const save = vi.fn<SaveFn>().mockReturnValueOnce(first.promise).mockImplementation(ok);
+    const c = new SaveCoordinator({ save, debounceMs: 500 });
+
+    c.enqueue(a, { label: "a" });
+    const flushing = c.flushAll();
+    await vi.advanceTimersByTimeAsync(0);
+    c.enqueue(b, { label: "b" }); // never seen before the flush started
+    first.resolve({ ok: true });
+
+    expect(await flushing).toEqual({ ok: true });
+    expect(save).toHaveBeenCalledWith(b, { label: "b" });
+    expect(c.hasUnsaved()).toBe(false);
+  });
+
+  it("also picks up a new edit to an entity that had already drained", async () => {
+    const a: SaveEntity = { kind: "block", id: "a" };
+    const b: SaveEntity = { kind: "block", id: "b" };
+    const slowB = deferred<SaveOutcome>();
+    const save = vi.fn<SaveFn>(async (entity) => (entity === b ? slowB.promise : { ok: true }));
+    const c = new SaveCoordinator({ save, debounceMs: 500 });
+
+    c.enqueue(a, { label: "a1" });
+    c.enqueue(b, { label: "b1" });
+    const flushing = c.flushAll();
+    await vi.advanceTimersByTimeAsync(0); // a done, b still in flight
+    c.enqueue(a, { label: "a2" });
+    slowB.resolve({ ok: true });
+
+    expect(await flushing).toEqual({ ok: true });
+    expect(save).toHaveBeenCalledWith(a, { label: "a2" });
+  });
+
+  it("holds suspended work and restores its failed state on resume", async () => {
+    const a: SaveEntity = { kind: "block", id: "a" };
+    const save = vi.fn<SaveFn>().mockResolvedValueOnce({ ok: false, error: "nope" }).mockImplementation(ok);
+    const c = new SaveCoordinator({ save, debounceMs: 0 });
+
+    c.enqueue(a, { label: "x" });
+    await vi.runAllTimersAsync();
+    expect(c.status(a)).toBe("failed");
+
+    c.suspend(a);
+    c.enqueue(a, { url: "https://y.example/" });
+    await vi.runAllTimersAsync();
+    expect(save).toHaveBeenCalledTimes(1); // nothing sent while suspended
+
+    c.resume(a); // the delete was refused
+    expect(c.status(a)).toBe("pending");
+    expect(c.hasUnsaved()).toBe(true);
+    expect(await c.retry(a)).toEqual({ ok: true });
+    expect(save).toHaveBeenLastCalledWith(a, { label: "x", url: "https://y.example/" });
+  });
+});

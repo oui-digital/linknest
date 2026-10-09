@@ -35,6 +35,8 @@ export type SaveFn = (entity: SaveEntity, patch: SavePatch) => Promise<SaveOutco
 
 export const SAVE_DEBOUNCE_MS = 500;
 export const SAVE_FAILED_MESSAGE = "Couldn't save your changes. Please try again.";
+export const STILL_SAVING_MESSAGE = "Still saving your latest changes. Try again in a moment.";
+const MAX_FLUSH_PASSES = 20;
 
 export function saveEntityKey(entity: SaveEntity): string {
   return entity.kind === "block" ? `block:${entity.id}` : "page";
@@ -52,6 +54,7 @@ type Entry = {
   inFlight: Promise<SaveOutcome> | null;
   status: SaveStatus;
   error: string | null;
+  suspended: boolean;
 };
 
 export class SaveCoordinator {
@@ -87,6 +90,10 @@ export class SaveCoordinator {
   ): void {
     const entry = this.entry(entity);
     entry.pending = mergeSavePatch(entry.pending ?? {}, patch);
+    if (entry.suspended) {
+      this.setStatus(entry, "pending", null);
+      return;
+    }
     if (entry.inFlight) {
       // Goes out as soon as the current request settles (see send()).
       this.setStatus(entry, "saving", null);
@@ -102,18 +109,60 @@ export class SaveCoordinator {
     return entry ? this.drain(entry) : Promise.resolve({ ok: true });
   }
 
-  /** Send everything pending, retry everything failed, report what still failed. */
+  /**
+   * Send everything pending, retry everything failed, report what still failed.
+   *
+   * Resolves `ok` only once nothing at all is unsaved. Edits made while the
+   * flush runs (to any entity, including ones already drained or never
+   * touched before) are picked up by the next pass, so a publish that awaits
+   * this never goes out over an edit made before it resolved.
+   */
   async flushAll(): Promise<FlushResult> {
-    const outcomes = await Promise.all(
-      [...this.entries.values()].map(async (entry) => ({
-        entity: entry.entity,
-        outcome: await this.drain(entry),
-      })),
-    );
-    const failed = outcomes.flatMap(({ entity, outcome }) =>
-      outcome.ok ? [] : [{ entity, error: outcome.error }],
-    );
-    return failed.length > 0 ? { ok: false, failed } : { ok: true };
+    for (let pass = 0; pass < MAX_FLUSH_PASSES; pass++) {
+      const outcomes = await Promise.all(
+        [...this.entries.values()]
+          .filter((entry) => !entry.suspended)
+          .map(async (entry) => ({ entity: entry.entity, outcome: await this.drain(entry) })),
+      );
+      const failed = outcomes.flatMap(({ entity, outcome }) =>
+        outcome.ok ? [] : [{ entity, error: outcome.error }],
+      );
+      if (failed.length > 0) return { ok: false, failed };
+      // A suspended entity's block is being deleted; its work is moot.
+      const active = [...this.entries.values()].filter((e) => !e.suspended);
+      if (!active.some((e) => e.pending || e.inFlight || e.status === "failed")) return { ok: true };
+    }
+    // Still changing after many passes (the owner kept typing): not settled.
+    return {
+      ok: false,
+      failed: [...this.entries.values()]
+        .filter((entry) => !entry.suspended && (entry.pending || entry.inFlight))
+        .map((entry) => ({ entity: entry.entity, error: STILL_SAVING_MESSAGE })),
+    };
+  }
+
+  /**
+   * Hold an entity's pending work without sending or dropping it, while an
+   * operation that may remove it (a delete) is in flight. resume() puts it
+   * back in the queue; forget() drops it once the removal is confirmed.
+   */
+  suspend(entity: SaveEntity): void {
+    const entry = this.entries.get(saveEntityKey(entity));
+    if (!entry) return;
+    entry.suspended = true;
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+  }
+
+  resume(entity: SaveEntity): void {
+    const entry = this.entries.get(saveEntityKey(entity));
+    if (!entry || !entry.suspended) return;
+    entry.suspended = false;
+    if (entry.pending && !entry.inFlight && entry.status !== "failed") {
+      this.schedule(entry, this.debounceMs);
+    }
   }
 
   /** A failed entity keeps its patch; retrying simply sends it again. */
@@ -172,7 +221,15 @@ export class SaveCoordinator {
     const key = saveEntityKey(entity);
     let entry = this.entries.get(key);
     if (!entry) {
-      entry = { entity, pending: null, timer: null, inFlight: null, status: "idle", error: null };
+      entry = {
+        entity,
+        pending: null,
+        timer: null,
+        inFlight: null,
+        status: "idle",
+        error: null,
+        suspended: false,
+      };
       this.entries.set(key, entry);
     }
     return entry;
@@ -241,7 +298,9 @@ export class SaveCoordinator {
         if (outcome.ok) {
           if (entry.pending) {
             this.setStatus(entry, "pending", null);
-            if (this.disposed) void this.send(entry);
+            if (entry.suspended) {
+              // held until resume() or forget()
+            } else if (this.disposed) void this.send(entry);
             else this.schedule(entry, this.debounceMs);
           } else {
             this.setStatus(entry, "idle", null);

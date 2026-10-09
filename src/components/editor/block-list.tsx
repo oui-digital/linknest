@@ -30,11 +30,16 @@ import { createBlock, deleteBlock, reorderBlocks } from "@/lib/actions/blocks";
 import { parseBlockContent, type BlockType } from "@/lib/blocks/content";
 import type { SaveCoordinator, SaveStatus } from "./save-coordinator";
 import { ImageUpload } from "./image-upload";
+import { applyBlockEdit, restoreBlock } from "./block-edit";
 
 type Block = InferSelectModel<typeof blocksSchema>;
 
-/** `immediate` skips the typing debounce: toggles, uploads, preset clicks. */
-type UpdateOptions = { immediate?: boolean };
+/**
+ * `immediate` skips the typing debounce: toggles, uploads, preset clicks.
+ * `contentPatch` changes only those content keys on the latest state; async
+ * callbacks (uploads) must use it instead of `updates.content`.
+ */
+type UpdateOptions = { immediate?: boolean; contentPatch?: Record<string, unknown> };
 
 const BLOCK_PICKER: { type: BlockType; label: string }[] = [
   { type: "link", label: "Link" },
@@ -136,24 +141,33 @@ export function BlockList({
   // block, and keeps a refused edit flagged on the block instead of rolling the
   // field back. Per-keystroke saves used to burn the mutation budget and reject
   // half-typed URLs.
+  //
+  // Always applied to the LATEST list (a ref, updated synchronously), never to
+  // the list captured when a callback was created: an upload that finishes
+  // later must not put back state that was edited in the meantime.
+  const latestBlocks = useRef(blocks);
+  useEffect(() => {
+    latestBlocks.current = blocks;
+  }, [blocks]);
+
   const handleUpdateBlock = useCallback(
     (blockId: string, updates: Partial<Block>, options?: UpdateOptions) => {
-      onBlocksChange(
-        blocks.map((b) => (b.id === blockId ? { ...b, ...updates } : b)),
-      );
+      const edit = applyBlockEdit(latestBlocks.current, blockId, updates, options?.contentPatch);
+      latestBlocks.current = edit.blocks;
+      onBlocksChange(edit.blocks);
 
       // Convert null values to what the action's schema expects.
       const patch: Record<string, unknown> = {};
       if (updates.label !== undefined) patch.label = updates.label ?? undefined;
       if (updates.url !== undefined) patch.url = updates.url ?? "";
       if (updates.isVisible !== undefined) patch.isVisible = updates.isVisible;
-      if (updates.content !== undefined) patch.content = updates.content;
+      if (edit.content !== undefined) patch.content = edit.content;
 
       saves.enqueue({ kind: "block", id: blockId }, patch, {
         immediate: options?.immediate,
       });
     },
-    [blocks, onBlocksChange, saves],
+    [onBlocksChange, saves],
   );
 
   const handleRetry = useCallback(
@@ -174,17 +188,26 @@ export function BlockList({
       );
       if (!confirmed) return;
 
-      // Whatever was still unsaved on this block goes with it; otherwise a
-      // late save would fail against a missing row and block publishing.
-      saves.forget({ kind: "block", id: blockId });
+      if (!target) return;
+      const entity = { kind: "block", id: blockId } as const;
 
-      const previous = blocks;
-      onBlocksChange(blocks.filter((b) => b.id !== blockId));
+      // Hold the block's unsaved edits (neither sent nor dropped) until the
+      // server answers: dropped only once the delete is confirmed, restored
+      // with their failed/pending state if it is refused.
+      saves.suspend(entity);
+      latestBlocks.current = latestBlocks.current.filter((b) => b.id !== blockId);
+      onBlocksChange(latestBlocks.current);
 
-      const result = await deleteBlock(blockId);
+      const result = await deleteBlock(blockId).catch(() => ({
+        error: "Couldn't delete the block. Please try again.",
+      }));
       if (result?.error) {
-        onBlocksChange(previous);
+        latestBlocks.current = restoreBlock(latestBlocks.current, target);
+        onBlocksChange(latestBlocks.current);
+        saves.resume(entity);
         onError(result.error);
+      } else {
+        saves.forget(entity);
       }
     },
     [blocks, saves, onBlocksChange, onError],
@@ -490,11 +513,7 @@ function SortableBlockItem({
                 label={imageUrl ? "Replace image" : "Upload image"}
                 onError={onError}
                 onUpload={(url) =>
-                  onUpdate(
-                    block.id,
-                    { content: { ...content, imageUrl: url } } as Partial<Block>,
-                    { immediate: true },
-                  )
+                  onUpdate(block.id, {}, { immediate: true, contentPatch: { imageUrl: url } })
                 }
               />
               <div>

@@ -1,0 +1,49 @@
+import type { InferSelectModel } from "drizzle-orm";
+import type { blocks as blocksSchema } from "@/lib/db/schema";
+import { parseBlockContent } from "@/lib/blocks/content";
+
+type Block = InferSelectModel<typeof blocksSchema>;
+
+/**
+ * Apply an edit to the latest block list.
+ *
+ * `contentPatch` changes only the given content keys (undefined removes a
+ * key) on top of the block's CURRENT content. Asynchronous callbacks (an
+ * upload finishing) must use it: building a whole `content` object from the
+ * state captured when the upload started would overwrite everything edited
+ * meanwhile. `updates.content`, by contrast, replaces content wholesale and
+ * is only safe from a synchronous handler that read the current render.
+ *
+ * Returns the new list and the full content to save (content is always sent
+ * whole because the server replaces it).
+ */
+export function applyBlockEdit(
+  blocks: Block[],
+  blockId: string,
+  updates: Partial<Block>,
+  contentPatch?: Record<string, unknown>,
+): { blocks: Block[]; content?: Record<string, unknown> } {
+  const current = blocks.find((b) => b.id === blockId);
+  if (!current) return { blocks };
+
+  let content = updates.content as Record<string, unknown> | undefined;
+  if (contentPatch) {
+    const merged: Record<string, unknown> = {
+      ...(content ?? parseBlockContent(current.type, current.content)),
+      ...contentPatch,
+    };
+    for (const key of Object.keys(merged)) {
+      if (merged[key] === undefined) delete merged[key];
+    }
+    content = merged;
+  }
+
+  const next = { ...current, ...updates, ...(content ? { content } : {}) };
+  return { blocks: blocks.map((b) => (b.id === blockId ? next : b)), content };
+}
+
+/** Put a block back at its position (a refused delete). */
+export function restoreBlock(blocks: Block[], block: Block): Block[] {
+  if (blocks.some((b) => b.id === block.id)) return blocks;
+  return [...blocks, block].sort((a, b) => a.position - b.position);
+}
