@@ -6,6 +6,7 @@ import { TextBlock } from "./text-block";
 import { DividerBlock } from "./divider-block";
 import { ImageBlock } from "./image-block";
 import { SocialsBlock } from "./socials-block";
+import { EmbedBlock } from "./embed-block";
 
 type Block = InferSelectModel<typeof blocks>;
 
@@ -18,7 +19,12 @@ interface BlockRendererProps {
   tile?: boolean;
 }
 
-export function BlockRenderer({ block, resolvedStyle, tile = false }: BlockRendererProps) {
+export function BlockRenderer({
+  block,
+  mode = "public",
+  resolvedStyle,
+  tile = false,
+}: BlockRendererProps) {
   if (!block.isVisible) return null;
 
   switch (block.type) {
@@ -34,6 +40,8 @@ export function BlockRenderer({ block, resolvedStyle, tile = false }: BlockRende
       return <ImageBlock block={block} tile={tile} />;
     case "socials":
       return <SocialsBlock block={block} />;
+    case "embed":
+      return <EmbedBlock block={block} mode={mode} />;
     default:
       return null;
   }

@@ -1,6 +1,6 @@
 import type { SaveEntity, SaveOutcome, SavePatch } from "./save-coordinator";
 
-type ActionResult = { error?: string } | undefined | null;
+type ActionResult = { error?: string; block?: unknown } | undefined | null;
 
 export type EditorActions = {
   updateBlock: (input: { id: string } & SavePatch) => Promise<ActionResult>;
@@ -18,10 +18,13 @@ export async function persistPatch(
   entity: SaveEntity,
   patch: SavePatch,
   actions: EditorActions,
+  onBlockSaved?: (block: unknown) => void,
 ): Promise<SaveOutcome> {
   if (entity.kind === "block") {
     const result = await actions.updateBlock({ id: entity.id, ...patch });
-    return result?.error ? { ok: false, error: result.error } : { ok: true };
+    if (result?.error) return { ok: false, error: result.error };
+    if (result?.block) onBlockSaved?.(result.block);
+    return { ok: true };
   }
 
   const { banner, ...fields } = patch;
