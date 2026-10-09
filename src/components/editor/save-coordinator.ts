@@ -132,6 +132,9 @@ export class SaveCoordinator {
         outcome.ok ? [] : [{ entity, error: outcome.error }],
       );
       if (failed.length > 0) return { ok: false, failed };
+      // A delete may have started while this pass was draining: never report
+      // success while one is unanswered. The next pass waits for it.
+      if (this.holds.size > 0) continue;
       // A suspended entity's block is being deleted; its work is moot.
       const active = [...this.entries.values()].filter((e) => !e.suspended);
       if (!active.some((e) => e.pending || e.inFlight || e.status === "failed")) return { ok: true };

@@ -316,3 +316,37 @@ describe("SaveCoordinator with a delete in flight", () => {
     expect(c.isHolding()).toBe(false);
   });
 });
+
+describe("SaveCoordinator: delete started during a flush", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  // Regression (QA recheck 2): publish while A saves; meanwhile edit and
+  // delete B; B's delete is refused. flushAll used to return ok.
+  it("re-checks pending deletes before reporting success", async () => {
+    const a: SaveEntity = { kind: "block", id: "a" };
+    const b: SaveEntity = { kind: "block", id: "b" };
+    const slowA = deferred<SaveOutcome>();
+    const save = vi.fn<SaveFn>(async (entity, patch) => {
+      if (entity === a) return slowA.promise;
+      return patch.url === "javascript:x" ? { ok: false, error: "Invalid URL" } : { ok: true };
+    });
+    const c = new SaveCoordinator({ save, debounceMs: 500 });
+
+    c.enqueue(a, { label: "a" });
+    const flushing = c.flushAll();
+    await vi.advanceTimersByTimeAsync(0); // A in flight, flush waiting on it
+
+    c.enqueue(b, { url: "javascript:x" }); // edit B…
+    const refused = deferred<boolean>();
+    void c.holdWhile(b, refused.promise); // …and delete it
+
+    slowA.resolve({ ok: true });
+    await vi.advanceTimersByTimeAsync(0);
+    refused.resolve(false); // the delete is refused
+
+    const result = await flushing;
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.failed.map((f) => f.entity)).toEqual([b]);
+  });
+});
