@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getUserWorkspace } from "@/lib/queries";
-import { r2Client, R2_BUCKET_NAME, getR2PublicUrl } from "@/lib/r2";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { processImage } from "@/lib/image-processing";
-import { db } from "@/lib/db";
-import { assets } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
-import { getLimit, type PlanId } from "@/lib/entitlements";
+import { type PlanId } from "@/lib/entitlements";
+import { storageUsage, storeImage } from "@/lib/uploads";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -45,13 +40,10 @@ export async function POST(request: NextRequest) {
     // Enforce the plan's storage quota. This route previously recorded nothing
     // in `assets`, so the quota was computed over an always-empty table and
     // every plan effectively had unlimited R2 storage.
-    const [usage] = await db
-      .select({ total: sql<number>`COALESCE(SUM(${assets.sizeBytes}), 0)` })
-      .from(assets)
-      .where(eq(assets.workspaceId, workspace.id));
-
-    const usedBytes = Number(usage?.total ?? 0);
-    const quota = getLimit(workspace.plan as PlanId, "max_asset_bytes");
+    const { usedBytes, quota } = await storageUsage(
+      workspace.id,
+      workspace.plan as PlanId,
+    );
     if (usedBytes >= quota) {
       return NextResponse.json(
         {
@@ -98,34 +90,13 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Process image (avatar → 512x512, default → max 1200px)
-    const processed = await processImage(buffer, typeField ?? undefined);
-
-    // Generate R2 key
-    const key = `${workspace.id}/${crypto.randomUUID()}.webp`;
-
-    // Upload to R2
-    await r2Client.send(
-      new PutObjectCommand({
-        Bucket: R2_BUCKET_NAME,
-        Key: key,
-        Body: processed,
-        ContentType: "image/webp",
-      }),
-    );
-
-    // Return public URL
-    const url = getR2PublicUrl(key);
-
-    // Record the asset so the quota above can actually see it, and so orphaned
-    // objects are attributable for cleanup.
-    await db.insert(assets).values({
+    // Re-encode (avatar → 512x512, thumbnail → 160x160, default → max 1200px),
+    // store in R2 and record the asset so the quota above can see it.
+    const url = await storeImage({
       workspaceId: workspace.id,
-      filename: file.name.slice(0, 255),
-      r2Key: key,
-      url,
-      mimeType: "image/webp",
-      sizeBytes: processed.length,
+      buffer,
+      type: (typeField ?? undefined) as "avatar" | "thumbnail" | undefined,
+      filename: file.name,
     });
 
     return NextResponse.json({ url });

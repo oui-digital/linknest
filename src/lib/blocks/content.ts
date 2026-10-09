@@ -20,7 +20,7 @@ import { SOCIAL_PLATFORM_IDS } from "@/lib/social-platforms";
  * plan-checked by validateStyleOverrides() in src/lib/actions/block-validation.ts.
  */
 
-export const BLOCK_TYPES = ["link", "header", "text", "divider", "image", "socials"] as const;
+export const BLOCK_TYPES = ["link", "header", "text", "divider", "image", "socials", "embed"] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 export const blockTypeSchema = z.enum(BLOCK_TYPES);
 
@@ -78,6 +78,16 @@ const socialItemsReader = z
     }),
   );
 
+// Embeds store identifiers only; the server derives them from blocks.url and
+// the renderer rebuilds the iframe address (src/lib/embeds.ts).
+const embedShape = {
+  provider: z.enum(["youtube", "vimeo", "spotify", "calendly"]).optional(),
+  embedId: z.string().regex(/^[A-Za-z0-9_/-]{1,64}$/).optional(),
+  kind: z.enum(["track", "album", "playlist", "episode", "show", "artist"]).optional(),
+  aspect: z.enum(["16:9", "9:16", "compact", "tall", "square"]).optional(),
+  coverUrl: z.string().max(2048).optional(),
+};
+
 const readStyle = { styleOverrides: z.object(styleOverridesShape).optional() };
 const writeStyle = { styleOverrides: z.strictObject(styleOverridesShape).optional() };
 
@@ -89,6 +99,7 @@ export const blockContentReaders = {
   divider: z.object({ ...dividerShape, ...readStyle }),
   image: z.object({ ...imageShape, ...readStyle }),
   socials: z.object({ items: socialItemsReader.optional(), ...readStyle }),
+  embed: z.object({ ...embedShape, ...readStyle }),
 };
 
 /** Strict: unknown keys are rejected. For validating writes. */
@@ -102,6 +113,7 @@ export const blockContentWriters = {
     items: z.array(socialItemSchema).max(MAX_SOCIAL_ITEMS).optional(),
     ...writeStyle,
   }),
+  embed: z.strictObject({ ...embedShape, ...writeStyle }),
 };
 
 export type BlockContent<T extends BlockType> = z.infer<(typeof blockContentReaders)[T]>;

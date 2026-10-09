@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages, blocks as blocksSchema } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
@@ -20,7 +20,7 @@ import { PublishBar } from "./publish-bar";
 import { MobilePreviewOverlay } from "./mobile-preview-overlay";
 import { useSaveCoordinator } from "./use-save-coordinator";
 import { persistPatch } from "./persist-patch";
-import type { SaveEntity, SaveOutcome, SavePatch } from "./save-coordinator";
+import type { SaveCoordinator, SaveEntity, SaveOutcome, SavePatch } from "./save-coordinator";
 import Link from "next/link";
 
 type Page = InferSelectModel<typeof pages>;
@@ -55,16 +55,40 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
   // Every block and page-field edit goes through one coordinator (see
   // save-coordinator.ts). It lives here, above the tabs, so switching tabs
   // never discards an edit that has not been sent yet.
+  // Some fields are derived by the server (an embed's canonical link, title
+  // and cover). They are applied to the editor once saved, unless newer edits
+  // to that block are still waiting, which would otherwise be overwritten.
+  const savesRef = useRef<SaveCoordinator | null>(null);
+  const applyServerBlock = useCallback((saved: unknown) => {
+    const block = saved as Block;
+    if (block.type !== "embed") return;
+    if (savesRef.current?.hasPending({ kind: "block", id: block.id })) return;
+    setBlocksState((prev) =>
+      prev.map((b) =>
+        b.id === block.id ? { ...b, url: block.url, label: block.label, content: block.content } : b,
+      ),
+    );
+  }, []);
+
   const persist = useCallback(
     (entity: SaveEntity, patch: SavePatch): Promise<SaveOutcome> =>
-      persistPatch(page.id, entity, patch, {
-        updateBlock: (input) => updateBlock(input as Parameters<typeof updateBlock>[0]),
-        updatePage: (input) => updatePage(input as Parameters<typeof updatePage>[0]),
-        updateBanner,
-      }),
-    [page.id],
+      persistPatch(
+        page.id,
+        entity,
+        patch,
+        {
+          updateBlock: (input) => updateBlock(input as Parameters<typeof updateBlock>[0]),
+          updatePage: (input) => updatePage(input as Parameters<typeof updatePage>[0]),
+          updateBanner,
+        },
+        applyServerBlock,
+      ),
+    [page.id, applyServerBlock],
   );
   const saves = useSaveCoordinator(persist);
+  useEffect(() => {
+    savesRef.current = saves;
+  }, [saves]);
 
   // Derive theme from pageState — single source of truth (no separate theme state)
   const template = useMemo(

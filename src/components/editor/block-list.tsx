@@ -55,6 +55,7 @@ const BLOCK_PICKER: { type: BlockType; label: string }[] = [
   { type: "divider", label: "Divider" },
   { type: "image", label: "Image" },
   { type: "socials", label: "Social icons" },
+  { type: "embed", label: "Embed" },
 ];
 
 const DEFAULT_LABELS: Partial<Record<BlockType, string>> = {
@@ -491,7 +492,8 @@ function SortableBlockItem({
         <div className="space-y-3 border-t border-gray-100 p-3">
           {(block.type === "link" ||
             block.type === "header" ||
-            block.type === "text") && (
+            block.type === "text" ||
+            block.type === "embed") && (
             <div>
               <label className="text-xs font-medium text-gray-500">Label</label>
               <input
@@ -626,6 +628,62 @@ function SortableBlockItem({
                 placeholder="Write a paragraph…"
                 className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
               />
+            </div>
+          )}
+          {block.type === "embed" && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-500">
+                  Link to embed
+                  {typeof content.provider === "string" && (
+                    <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-600">
+                      {content.provider}
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="url"
+                  value={block.url ?? ""}
+                  onChange={(e) => onUpdate(block.id, { url: e.target.value })}
+                  placeholder="YouTube, Vimeo, Spotify or Calendly link"
+                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Visitors see a preview image; the player loads only when they press play.
+                </p>
+              </div>
+              {block.url && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-gray-500">Preview image</label>
+                  <div className="flex items-center gap-3">
+                    <ImageUpload
+                      currentUrl={(content.coverUrl as string | undefined) ?? null}
+                      shape="rect"
+                      label={content.coverUrl ? "Replace" : "Upload"}
+                      onError={onError}
+                      onUpload={(url) =>
+                        onUpdate(
+                          block.id,
+                          { content: { ...content, coverUrl: url } } as Partial<Block>,
+                          { immediate: true },
+                        )
+                      }
+                    />
+                    {typeof content.coverUrl === "string" && (
+                      <button
+                        onClick={() => {
+                          const next: Record<string, unknown> = { ...content };
+                          delete next.coverUrl;
+                          onUpdate(block.id, { content: next }, { immediate: true });
+                        }}
+                        className="text-xs text-gray-400 hover:text-red-500"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {block.type === "socials" && (

@@ -33,6 +33,14 @@ describe("persistPatch", () => {
     expect(a.updatePage).not.toHaveBeenCalled();
   });
 
+  it("hands the saved block back so server-derived fields can be applied", async () => {
+    const saved = { id: "b1", type: "embed", url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" };
+    const a = actions({ updateBlock: vi.fn(async () => ({ block: saved })) });
+    const onBlockSaved = vi.fn();
+    await persistPatch("p1", { kind: "block", id: "b1" }, { url: "youtu.be/dQw4w9WgXcQ" }, a, onBlockSaved);
+    expect(onBlockSaved).toHaveBeenCalledWith(saved);
+  });
+
   it("reports the first refusal", async () => {
     const a = actions({ updateBanner: vi.fn(async () => ({ error: "Flagged link" })) });
     expect(await persistPatch("p1", { kind: "page" }, { banner: { text: "x", url: "https://bad/" }, bio: "b" }, a)).toEqual({

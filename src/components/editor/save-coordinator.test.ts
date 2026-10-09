@@ -152,6 +152,20 @@ describe("SaveCoordinator", () => {
     expect(c.hasUnsaved()).toBe(false);
   });
 
+  it("knows when newer edits wait behind the request in flight", async () => {
+    const first = deferred<SaveOutcome>();
+    const save = vi.fn<SaveFn>().mockReturnValueOnce(first.promise).mockImplementation(ok);
+    const c = new SaveCoordinator({ save, debounceMs: 0 });
+    c.enqueue(block, { url: "a" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(c.hasPending(block)).toBe(false);
+    c.enqueue(block, { label: "b" });
+    expect(c.hasPending(block)).toBe(true);
+    first.resolve({ ok: true });
+    await vi.runAllTimersAsync();
+    expect(c.hasPending(block)).toBe(false);
+  });
+
   it("sends immediate edits without waiting", async () => {
     const save = vi.fn<SaveFn>(ok);
     const c = new SaveCoordinator({ save, debounceMs: 500 });

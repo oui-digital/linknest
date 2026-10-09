@@ -267,6 +267,15 @@ export default function PrivacyPage() {
                 <li>Google Safe Browsing (URL threat classification)</li>
                 <li>Google Fonts (font delivery)</li>
                 <li>Hosting provider (application hosting and network delivery)</li>
+                <li>
+                  YouTube (privacy-enhanced mode), Vimeo, Spotify and Calendly,
+                  when a page owner embeds their content. Embedded media loads
+                  only after a visitor chooses to play or open it; at that point
+                  the provider receives the visitor&apos;s IP address under its
+                  own privacy policy. Preview images are copies stored by
+                  LinkNest, so nothing is requested from these providers before
+                  that choice.
+                </li>
               </ul>
               <p>
                 Each provider processes data according to its own privacy

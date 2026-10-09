@@ -23,6 +23,9 @@ import { extractScannableUrls } from "@/lib/block-urls";
 import { isOwnAssetUrl } from "@/lib/assets";
 import { verifyPageOwnership } from "@/lib/page-ownership";
 import { resolveSocialInput } from "@/lib/social-platforms";
+import { parseEmbedUrl, type ParsedEmbed } from "@/lib/embeds";
+import { fetchEmbedMetadata } from "@/lib/embed-metadata";
+import { storageUsage, storeImage } from "@/lib/uploads";
 import { validateStyleOverrides } from "./block-validation";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
@@ -77,7 +80,7 @@ function prepareContent(
   // Uploaded images are never Safe-Browsing scanned, so they must be our own
   // assets: a third-party URL here would be an unscanned destination and a
   // tracking pixel on every visit.
-  for (const key of ["imageUrl", "thumbnailUrl"] as const) {
+  for (const key of ["imageUrl", "thumbnailUrl", "coverUrl"] as const) {
     const value = content[key];
     if (typeof value !== "string" || !value) continue;
     const result = normalizeUrl(value);
@@ -118,6 +121,45 @@ function prepareContent(
   return { content };
 }
 
+/** The identifiers an embed stores, derived from its link. */
+function embedIdentity(embed: ParsedEmbed): Record<string, unknown> {
+  return {
+    provider: embed.provider,
+    embedId: embed.embedId,
+    ...(embed.kind ? { kind: embed.kind } : {}),
+    aspect: embed.aspect,
+  };
+}
+
+/**
+ * Title and cover for a newly pasted embed. The cover is fetched under the
+ * SSRF constraints in src/lib/embed-metadata.ts and stored as our own asset,
+ * within the storage quota. Never fails the save.
+ */
+async function embedExtras(
+  embed: ParsedEmbed,
+  workspace: { id: string; plan: string },
+): Promise<{ title?: string; coverUrl?: string }> {
+  try {
+    const meta = await fetchEmbedMetadata(embed);
+    let coverUrl: string | undefined;
+    if (meta.cover) {
+      const { usedBytes, quota } = await storageUsage(workspace.id, workspace.plan as PlanId);
+      if (usedBytes < quota) {
+        coverUrl = await storeImage({
+          workspaceId: workspace.id,
+          buffer: meta.cover,
+          filename: `${embed.provider}-${embed.embedId.replace(/\//g, "-")}-cover`,
+        });
+      }
+    }
+    return { title: meta.title, coverUrl };
+  } catch (error) {
+    console.error("[embed] metadata failed:", error);
+    return {};
+  }
+}
+
 // ─── Create Block ───────────────────────────────────────────────────────────
 
 export async function createBlock(input: z.infer<typeof createBlockSchema>) {
@@ -152,6 +194,18 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
 
   const contentResult = prepareContent(parsed.data.type, parsed.data.content, plan);
   if ("error" in contentResult) return { error: contentResult.error };
+
+  // An embed's identity always comes from its link, never from the request.
+  if (parsed.data.type === "embed") {
+    if (normalizedUrl) {
+      const embed = parseEmbedUrl(normalizedUrl);
+      if ("error" in embed) return { error: embed.error };
+      normalizedUrl = embed.canonicalUrl;
+      contentResult.content = embedIdentity(embed);
+    } else {
+      contentResult.content = {};
+    }
+  }
 
   const limit = getLimit(plan, "max_blocks_per_page");
 
@@ -234,7 +288,13 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
   // visibility are re-read inside applyBlockUpdate, under the live-edit
   // protocol, so a concurrent edit to the same block cannot go unscanned.
   const [block] = await db
-    .select({ pageId: blocks.pageId, type: blocks.type })
+    .select({
+      pageId: blocks.pageId,
+      type: blocks.type,
+      url: blocks.url,
+      label: blocks.label,
+      content: blocks.content,
+    })
     .from(blocks)
     .where(eq(blocks.id, parsed.data.id))
     .limit(1);
@@ -253,14 +313,6 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
 
   const { workspace, page } = result;
 
-  // Validate + normalize the URL against the scheme allowlist
-  let normalizedUrl: string | null = null;
-  if (parsed.data.url) {
-    const urlResult = normalizeUrl(parsed.data.url);
-    if ("error" in urlResult) return { error: urlResult.error };
-    normalizedUrl = urlResult.url;
-  }
-
   const contentResult = prepareContent(
     block.type,
     parsed.data.content,
@@ -270,8 +322,47 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
 
   const patch: BlockPatch = {};
   if (parsed.data.label !== undefined) patch.label = parsed.data.label;
-  if (parsed.data.url !== undefined) patch.url = normalizedUrl;
   if (parsed.data.content !== undefined) patch.content = contentResult.content;
+
+  if (block.type === "embed") {
+    // The link decides everything: provider, ids, canonical URL. Client-sent
+    // identifiers are ignored; only an uploaded cover is taken from content.
+    const urlChanged = parsed.data.url !== undefined && parsed.data.url !== (block.url ?? "");
+    if (urlChanged && !parsed.data.url) {
+      patch.url = null;
+      patch.content = {};
+    } else {
+      const source = urlChanged ? parsed.data.url! : block.url;
+      const embed = source ? parseEmbedUrl(source) : null;
+      if (embed && "error" in embed) return { error: embed.error };
+      if (embed) {
+        const cover = urlChanged
+          ? undefined
+          : (patch.content?.coverUrl as string | undefined) ??
+            (parsed.data.content === undefined
+              ? ((block.content as Record<string, unknown> | null)?.coverUrl as string | undefined)
+              : undefined);
+        const extras = urlChanged ? await embedExtras(embed, workspace) : {};
+        patch.url = embed.canonicalUrl;
+        patch.content = {
+          ...embedIdentity(embed),
+          ...((extras.coverUrl ?? cover) ? { coverUrl: extras.coverUrl ?? cover } : {}),
+        };
+        if (extras.title && !(parsed.data.label ?? block.label)) patch.label = extras.title;
+      } else if (patch.content !== undefined) {
+        patch.content = {}; // no link yet: nothing to identify
+      }
+    }
+  } else if (parsed.data.url !== undefined) {
+    // Validate + normalize the URL against the scheme allowlist
+    if (parsed.data.url) {
+      const urlResult = normalizeUrl(parsed.data.url);
+      if ("error" in urlResult) return { error: urlResult.error };
+      patch.url = urlResult.url;
+    } else {
+      patch.url = null;
+    }
+  }
   if (parsed.data.isVisible !== undefined) patch.isVisible = parsed.data.isVisible;
 
   const outcome = await applyBlockUpdate(db, {

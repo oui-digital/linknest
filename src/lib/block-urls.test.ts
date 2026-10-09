@@ -43,3 +43,15 @@ describe("extractScannableUrls for social icons", () => {
     ).toEqual(["https://x.com/b"]);
   });
 });
+
+describe("extractScannableUrls for embeds", () => {
+  it("scans the canonical provider link but never the stored cover", () => {
+    expect(
+      extractScannableUrls({
+        type: "embed",
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        content: { provider: "youtube", embedId: "dQw4w9WgXcQ", coverUrl: "https://cdn.example/c.webp" },
+      }),
+    ).toEqual(["https://www.youtube.com/watch?v=dQw4w9WgXcQ"]);
+  });
+});

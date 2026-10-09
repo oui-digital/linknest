@@ -223,6 +223,11 @@ export class SaveCoordinator {
     return this.entries.get(saveEntityKey(entity))?.error ?? null;
   }
 
+  /** Whether edits newer than the request in flight are waiting to be sent. */
+  hasPending(entity: SaveEntity): boolean {
+    return Boolean(this.entries.get(saveEntityKey(entity))?.pending);
+  }
+
   hasUnsaved(): boolean {
     for (const entry of this.entries.values()) {
       if (entry.pending || entry.inFlight || entry.status === "failed") return true;
