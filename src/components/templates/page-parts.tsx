@@ -27,10 +27,13 @@ export type RenderMode = "public" | "preview";
 export function PageFrame({
   theme,
   className = "min-h-screen",
+  top,
   children,
 }: {
   theme: ThemeTokens;
   className?: string;
+  /** Full-width content above the page container (the announcement banner). */
+  top?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const cssVars = themeToCssVars(theme);
@@ -74,6 +77,7 @@ export function PageFrame({
           <link rel="stylesheet" href={googleFontsUrl} precedence="default" />
         </>
       )}
+      {top}
       <div
         className="mx-auto"
         style={{

@@ -6,6 +6,7 @@ import type { pages } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { AvatarFallback } from "@/components/ui/avatar-fallback";
 import type { SaveCoordinator, SaveEntity } from "./save-coordinator";
+import { BANNER_TEXT_MAX } from "@/lib/banner";
 
 type Page = InferSelectModel<typeof pages>;
 
@@ -48,6 +49,25 @@ export function PageSettings({
       setTouched(true);
       onPageChange({ [field]: value } as Partial<Page>);
       saves.enqueue(PAGE, { [field]: value });
+    },
+    [saves, onPageChange],
+  );
+
+  // The inputs keep what was typed (a link typed before any text survives);
+  // what is saved and previewed is null until there is text.
+  const [bannerDraft, setBannerDraft] = useState({
+    text: page.banner?.text ?? "",
+    url: page.banner?.url ?? "",
+  });
+  const handleBanner = useCallback(
+    (draft: { text: string; url: string }) => {
+      setBannerDraft(draft);
+      setTouched(true);
+      const banner = draft.text.trim()
+        ? { text: draft.text.trim(), url: draft.url.trim() || null }
+        : null;
+      onPageChange({ banner } as Partial<Page>);
+      saves.enqueue(PAGE, { banner });
     },
     [saves, onPageChange],
   );
@@ -249,6 +269,53 @@ export function PageSettings({
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400"
             />
           </div>
+        </div>
+      </section>
+
+      {/* Announcement banner */}
+      <section>
+        <h3 className="mb-1 text-sm font-semibold">Announcement banner</h3>
+        <p className="mb-3 text-xs text-gray-400">
+          A bar pinned to the top of your page, in your theme&apos;s main colour. Visitors can dismiss it.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-gray-500">
+              Text{" "}
+              <span className="text-gray-400">
+                ({bannerDraft.text.length}/{BANNER_TEXT_MAX})
+              </span>
+            </label>
+            <input
+              type="text"
+              value={bannerDraft.text}
+              onChange={(e) => handleBanner({ ...bannerDraft, text: e.target.value })}
+              maxLength={BANNER_TEXT_MAX}
+              placeholder="e.g. New album out Friday"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">
+              Link <span className="text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="url"
+              value={bannerDraft.url}
+              onChange={(e) => handleBanner({ ...bannerDraft, url: e.target.value })}
+              placeholder="https://"
+              disabled={!bannerDraft.text.trim()}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400 disabled:bg-gray-50"
+            />
+          </div>
+          {page.banner && (
+            <button
+              onClick={() => handleBanner({ text: "", url: "" })}
+              className="text-xs text-gray-400 hover:text-red-500"
+            >
+              Remove banner
+            </button>
+          )}
         </div>
       </section>
 

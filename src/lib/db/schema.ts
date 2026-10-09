@@ -124,6 +124,9 @@ export const workspaceMembers = pgTable(
 
 // ─── pages ───────────────────────────────────────────────────────────────────
 
+/** Sticky announcement bar at the top of a public page (null = none). */
+export type PageBanner = { text: string; url: string | null };
+
 export const pages = pgTable(
   "pages",
   {
@@ -141,6 +144,9 @@ export const pages = pgTable(
     theme: jsonb("theme").default({}).notNull(),
     seoTitle: varchar("seo_title", { length: 70 }),
     seoDescription: varchar("seo_description", { length: 160 }),
+    // Validated by bannerSchema (src/lib/banner.ts). Its link is scanned like
+    // a block link: saved through applyLiveEdit and included in publish scans.
+    banner: jsonb("banner").$type<PageBanner | null>(),
     isPublished: boolean("is_published").default(false).notNull(),
     publishedAt: timestamp("published_at", { mode: "date" }), // reset on every publish
     // Set once, on the first publish, and never changed. The search-indexing
