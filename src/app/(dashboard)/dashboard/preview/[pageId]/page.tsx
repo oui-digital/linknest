@@ -5,6 +5,7 @@ import { pages, blocks } from "@/lib/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getUserWorkspace } from "@/lib/queries";
 import { TemplateRenderer } from "@/components/templates/template-renderer";
+import type { ThemeTokens } from "@/lib/templates/theme";
 
 export const dynamic = "force-dynamic";
 
@@ -50,9 +51,19 @@ export default async function PreviewPage({ params }: Props) {
 
   const pageBlocks = await getPageBlocks(page.id);
 
+  // Same badge rule as the public page, so the preview shows what visitors see.
+  const theme = page.theme as Partial<ThemeTokens> | null;
+  const showBadge = !(workspace.plan === "pro" && theme?.hideBranding);
+
   return (
     <div className="min-h-screen bg-gray-100">
-      <TemplateRenderer page={page} blocks={pageBlocks} showReport={false} />
+      <TemplateRenderer
+        page={page}
+        blocks={pageBlocks}
+        showBadge={showBadge}
+        showReport={false}
+        mode="preview"
+      />
     </div>
   );
 }

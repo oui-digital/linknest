@@ -10,6 +10,8 @@ type Block = InferSelectModel<typeof blocks>;
 
 interface BlockRendererProps {
   block: Block;
+  /** "preview" = the editor or dashboard preview; interactive blocks render inert. */
+  mode?: "public" | "preview";
   resolvedStyle?: React.CSSProperties;
 }
 
