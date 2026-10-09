@@ -22,6 +22,7 @@ import {
 import { extractScannableUrls } from "@/lib/block-urls";
 import { isOwnAssetUrl } from "@/lib/assets";
 import { verifyPageOwnership } from "@/lib/page-ownership";
+import { resolveSocialInput } from "@/lib/social-platforms";
 import { validateStyleOverrides } from "./block-validation";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
@@ -83,6 +84,25 @@ function prepareContent(
       return { error: "Images must be uploaded through LinkNest." };
     }
     content.imageUrl = result.url;
+  }
+
+  // Social icons: re-derive every URL on the server and require the declared
+  // platform to match the link's host, so a "LinkedIn" icon cannot point at an
+  // arbitrary site. Duplicate destinations are dropped.
+  if (type === "socials" && Array.isArray(content.items)) {
+    const seen = new Set<string>();
+    const items: Record<string, unknown>[] = [];
+    for (const item of content.items as { platform: string; url: string; label?: string }[]) {
+      const resolved = resolveSocialInput(item.url, item.platform as never);
+      if ("error" in resolved) return { error: resolved.error };
+      if (resolved.platform !== item.platform) {
+        return { error: "A social icon's link doesn't match its platform." };
+      }
+      if (seen.has(resolved.url)) continue;
+      seen.add(resolved.url);
+      items.push({ ...item, url: resolved.url });
+    }
+    content.items = items;
   }
 
   // Shape- and plan-checked on create as well as update: a direct call to

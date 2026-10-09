@@ -9,6 +9,8 @@
  * Owner-uploaded images are not destinations: they are first-party assets
  * (src/lib/assets.ts) and are never scanned.
  */
+import { parseBlockContent } from "@/lib/blocks/content";
+
 export type ScannableBlock = {
   type: string;
   url: string | null;
@@ -18,6 +20,10 @@ export type ScannableBlock = {
 export function extractScannableUrls(block: ScannableBlock): string[] {
   const urls: string[] = [];
   if (block.url) urls.push(block.url);
-  // Later block types append content-carried URLs here, keyed on block.type.
+  if (block.type === "socials") {
+    for (const item of parseBlockContent("socials", block.content).items ?? []) {
+      urls.push(item.url);
+    }
+  }
   return [...new Set(urls)];
 }

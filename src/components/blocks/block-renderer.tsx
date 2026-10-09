@@ -5,6 +5,7 @@ import { HeaderBlock } from "./header-block";
 import { TextBlock } from "./text-block";
 import { DividerBlock } from "./divider-block";
 import { ImageBlock } from "./image-block";
+import { SocialsBlock } from "./socials-block";
 
 type Block = InferSelectModel<typeof blocks>;
 
@@ -29,6 +30,8 @@ export function BlockRenderer({ block, resolvedStyle }: BlockRendererProps) {
       return <DividerBlock />;
     case "image":
       return <ImageBlock block={block} />;
+    case "socials":
+      return <SocialsBlock block={block} />;
     default:
       return null;
   }
