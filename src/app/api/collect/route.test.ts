@@ -104,6 +104,40 @@ describe("POST /api/collect", () => {
     consoleError.mockRestore();
   });
 
+  it("accepts embed activations and the banner's pseudo block id", async () => {
+    const blockId = "6f1c2b9e-3a4d-4e5f-8a7b-9c0d1e2f3a4b";
+    await beacon({
+      event: "embed_play",
+      slug: "jordan",
+      blockId,
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      label: "Play",
+    });
+    expect(posthog.captureImmediate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ event: "embed_play" }),
+    );
+
+    await beacon({
+      event: "link_click",
+      slug: "jordan",
+      blockId: "banner",
+      url: "https://shop.example/",
+      label: "Banner",
+    });
+    expect(posthog.captureImmediate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        event: "link_click",
+        properties: expect.objectContaining({ block_id: "banner" }),
+      }),
+    );
+  });
+
+  it("drops events whose block id is neither a uuid nor the banner", async () => {
+    const res = await beacon({ event: "link_click", slug: "jordan", blockId: "evil" });
+    expect(res.status).toBe(204);
+    expect(posthog.captureImmediate).not.toHaveBeenCalled();
+  });
+
   it("drops crawler traffic without contacting PostHog", async () => {
     const res = await beacon({ event: "$pageview", slug: "jordan" }, "Googlebot/2.1");
     expect(res.status).toBe(204);

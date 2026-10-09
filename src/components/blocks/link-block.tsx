@@ -42,6 +42,7 @@ export function LinkBlock({ block, resolvedStyle }: LinkBlockProps) {
       href={block.url}
       {...(external ? { target: "_blank", rel: USER_LINK_REL } : {})}
       data-link-id={block.id}
+      data-link-label={block.label ?? undefined}
       className="block w-full text-center transition-transform hover:scale-[1.02] focus-visible:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[box-shadow:0_0_0_4px_var(--ln-color-bg)]"
       style={resolvedStyle ? { ...baseStyle, ...resolvedStyle } : baseStyle}
     >

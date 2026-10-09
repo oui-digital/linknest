@@ -1,12 +1,13 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { blocks } from "@/lib/db/schema";
+import { parseBlockContent } from "@/lib/blocks/content";
 
 type Block = InferSelectModel<typeof blocks>;
 
 export function ImageBlock({ block }: { block: Block }) {
-  const content = block.content as { imageUrl?: string; alt?: string } | null;
-  const imageUrl = content?.imageUrl || block.url;
-  const alt = content?.alt || block.label || "";
+  const content = parseBlockContent("image", block.content);
+  const imageUrl = content.imageUrl || block.url;
+  const alt = content.alt || block.label || "";
 
   if (!imageUrl) return null;
 

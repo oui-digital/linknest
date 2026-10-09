@@ -4,9 +4,8 @@ import { z } from "zod";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { blocks, pages } from "@/lib/db/schema";
+import { blocks } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
-import { getUserWorkspace } from "@/lib/queries";
 import { publicPageTag } from "@/lib/cache-tags";
 import { checkUrls, normalizeUrl } from "@/lib/safe-browsing";
 import { applyBlockUpdate, applyLiveEdit, type BlockPatch } from "@/lib/live-edit";
@@ -14,53 +13,41 @@ import { scheduleLinkFarmCheck } from "@/lib/link-farm-check";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import { getLimit, type PlanId } from "@/lib/entitlements";
 import { type BlockStyleOverrides } from "@/lib/templates/theme";
+import {
+  blockTypeSchema,
+  blockContentWriterFor,
+  isBlockType,
+  type BlockType,
+} from "@/lib/blocks/content";
+import { extractScannableUrls } from "@/lib/block-urls";
+import { isOwnAssetUrl } from "@/lib/assets";
+import { verifyPageOwnership } from "@/lib/page-ownership";
 import { validateStyleOverrides } from "./block-validation";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
 
-const blockTypeSchema = z.enum(["link", "header", "text", "divider", "image"]);
-
-// `content` is rendered directly by the block components, so its shape must be
-// closed. A bare z.record(z.unknown()) let a non-string land in a JSX text slot
-// ("Objects are not valid as a React child"), which throws during SSR and takes
-// down the whole public page. styleOverrides is shape- and plan-checked
-// separately by validateStyleOverrides().
-const blockStyleOverridesSchema = z
-  .object({
-    variant: z.string().max(32).optional(),
-    bgColor: z.string().max(32).optional(),
-    textColor: z.string().max(32).optional(),
-    borderRadius: z.number().optional(),
-    shadow: z.string().max(16).optional(),
-    buttonStyle: z.string().max(32).optional(),
-  })
-  .strict();
-
-const blockContentSchema = z
-  .object({
-    text: z.string().max(5000).optional(),
-    imageUrl: z.string().max(2048).optional(),
-    alt: z.string().max(255).optional(),
-    styleOverrides: blockStyleOverridesSchema.optional(),
-  })
-  .strict();
-
 // `url` is deliberately NOT z.url(): zod accepts any scheme new URL() parses,
 // including javascript:. normalizeUrl() applies the scheme allowlist and
 // returns the value we persist.
+//
+// `content` is only shape-checked here. Its closed, per-type schema
+// (src/lib/blocks/content.ts) is applied by prepareContent() once the block's
+// type is known: the request's type for a create, the stored type for an update.
+const contentInputSchema = z.record(z.string(), z.unknown());
+
 const createBlockSchema = z.object({
   pageId: z.string().uuid(),
   type: blockTypeSchema,
   label: z.string().max(255).optional(),
   url: z.string().max(2048).optional(),
-  content: blockContentSchema.optional(),
+  content: contentInputSchema.optional(),
 });
 
 const updateBlockSchema = z.object({
   id: z.string().uuid(),
   label: z.string().max(255).optional(),
   url: z.string().max(2048).optional(),
-  content: blockContentSchema.optional(),
+  content: contentInputSchema.optional(),
   isVisible: z.boolean().optional(),
 });
 
@@ -71,35 +58,42 @@ const reorderBlocksSchema = z.object({
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-async function verifyPageOwnership(pageId: string, userId: string) {
-  const workspace = await getUserWorkspace(userId);
-  if (!workspace) return null;
-
-  const [page] = await db
-    .select()
-    .from(pages)
-    .where(and(eq(pages.id, pageId), eq(pages.workspaceId, workspace.id)))
-    .limit(1);
-
-  if (!page) return null;
-  return { page, workspace };
-}
-
-/** Normalize any URLs carried inside a block's content payload. */
-function normalizeContent(
-  content: z.infer<typeof blockContentSchema> | undefined,
+/**
+ * Validate a block's content against its type, normalize the URLs it carries
+ * and apply the plan gates. Returns the value to persist.
+ */
+function prepareContent(
+  type: BlockType,
+  raw: Record<string, unknown> | undefined,
+  plan: PlanId,
 ): { content: Record<string, unknown> } | { error: string } {
-  if (!content) return { content: {} };
+  if (raw === undefined) return { content: {} };
 
-  const normalized: Record<string, unknown> = { ...content };
+  const parsed = blockContentWriterFor(type).safeParse(raw);
+  if (!parsed.success) return { error: "Invalid input" };
+  const content: Record<string, unknown> = { ...parsed.data };
 
-  if (content.imageUrl) {
+  // Uploaded images are never Safe-Browsing scanned, so they must be our own
+  // assets: a third-party URL here would be an unscanned destination and a
+  // tracking pixel on every visit.
+  if (typeof content.imageUrl === "string" && content.imageUrl) {
     const result = normalizeUrl(content.imageUrl);
     if ("error" in result) return { error: "Invalid image URL." };
-    normalized.imageUrl = result.url;
+    if (!isOwnAssetUrl(result.url)) {
+      return { error: "Images must be uploaded through LinkNest." };
+    }
+    content.imageUrl = result.url;
   }
 
-  return { content: normalized };
+  // Shape- and plan-checked on create as well as update: a direct call to
+  // createBlock used to be able to store un-gated Pro overrides.
+  const overrides = content.styleOverrides as BlockStyleOverrides | undefined;
+  if (overrides && Object.keys(overrides).length > 0) {
+    const err = validateStyleOverrides(overrides, plan);
+    if (err) return { error: err };
+  }
+
+  return { content };
 }
 
 // ─── Create Block ───────────────────────────────────────────────────────────
@@ -124,6 +118,7 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
   }
 
   const { page, workspace } = result;
+  const plan = workspace.plan as PlanId;
 
   // Validate + normalize the URL against the scheme allowlist
   let normalizedUrl: string | null = null;
@@ -133,18 +128,23 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
     normalizedUrl = urlResult.url;
   }
 
-  const contentResult = normalizeContent(parsed.data.content);
+  const contentResult = prepareContent(parsed.data.type, parsed.data.content, plan);
   if ("error" in contentResult) return { error: contentResult.error };
 
-  const limit = getLimit(workspace.plan as PlanId, "max_blocks_per_page");
+  const limit = getLimit(plan, "max_blocks_per_page");
 
   // Scanned first when the page is live, then written under the page row lock
   // (src/lib/live-edit.ts). The count and position reads happen under that
   // lock too, so two concurrent creates can no longer both pass the limit or
-  // take the same position.
+  // take the same position. Every destination the new block carries is
+  // scanned, not only its `url` column.
   const outcome = await applyLiveEdit(db, {
     pageId: page.id,
-    introducedUrls: normalizedUrl ? [normalizedUrl] : [],
+    introducedUrls: extractScannableUrls({
+      type: parsed.data.type,
+      url: normalizedUrl,
+      content: contentResult.content,
+    }),
     checkUrls,
     write: async (tx) => {
       const [blockCount] = await tx
@@ -208,7 +208,7 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
     return { error: "Invalid input" };
   }
 
-  // Verify ownership through the block's page. The block's current url and
+  // Verify ownership through the block's page. The block's current URLs and
   // visibility are re-read inside applyBlockUpdate, under the live-edit
   // protocol, so a concurrent edit to the same block cannot go unscanned.
   const [block] = await db
@@ -219,6 +219,9 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
 
   if (!block) {
     return { error: "Block not found" };
+  }
+  if (!isBlockType(block.type)) {
+    return { error: "Unsupported block type" };
   }
 
   const result = await verifyPageOwnership(block.pageId, session.user.id);
@@ -236,19 +239,12 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
     normalizedUrl = urlResult.url;
   }
 
-  const contentResult = normalizeContent(parsed.data.content);
+  const contentResult = prepareContent(
+    block.type,
+    parsed.data.content,
+    workspace.plan as PlanId,
+  );
   if ("error" in contentResult) return { error: contentResult.error };
-
-  // Validate style overrides (only when content.styleOverrides is being written)
-  if (parsed.data.content) {
-    const overrides = parsed.data.content.styleOverrides as
-      | BlockStyleOverrides
-      | undefined;
-    if (overrides && Object.keys(overrides).length > 0) {
-      const err = validateStyleOverrides(overrides, workspace.plan as PlanId);
-      if (err) return { error: err };
-    }
-  }
 
   const patch: BlockPatch = {};
   if (parsed.data.label !== undefined) patch.label = parsed.data.label;

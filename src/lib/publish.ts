@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { blocks, pages } from "@/lib/db/schema";
 import type { Db } from "@/lib/db/types";
 import { checkUrlsOrQueue, type UrlChecker } from "@/lib/publish-checks";
+import { extractScannableUrls } from "@/lib/block-urls";
 import type { LiveEditHooks } from "@/lib/live-edit";
 import { activeHolds, moderationBlockMessage } from "@/lib/moderation";
 import { loadModerationEntries } from "@/lib/moderation-actions";
@@ -52,11 +53,13 @@ export async function publishPageCore(
       .limit(1);
     if (!snapshot) return { ok: false, error: "Page not found" };
 
+    // Every destination on every block, including those carried inside
+    // `content` (src/lib/block-urls.ts), not only the `url` column.
     const rows = await db
-      .select({ url: blocks.url })
+      .select({ type: blocks.type, url: blocks.url, content: blocks.content })
       .from(blocks)
       .where(eq(blocks.pageId, pageId));
-    const urls = rows.map((b) => b.url).filter((u): u is string => Boolean(u));
+    const urls = [...new Set(rows.flatMap(extractScannableUrls))];
 
     const scan = await checkUrlsOrQueue(db, pageId, urls, checkUrls);
     if (!scan.ok) {

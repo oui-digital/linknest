@@ -6,8 +6,8 @@ import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { pages } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
-import { getUserWorkspace } from "@/lib/queries";
+import { eq } from "drizzle-orm";
+import { verifyPageOwnership } from "@/lib/page-ownership";
 import { publicPageTag } from "@/lib/cache-tags";
 import { checkUrls } from "@/lib/safe-browsing";
 import { publishPageCore } from "@/lib/publish";
@@ -112,23 +112,6 @@ const updatePageSchema = z.object({
   seoTitle: z.string().max(70).optional(),
   seoDescription: z.string().max(160).optional(),
 });
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-async function verifyPageOwnership(pageId: string, userId: string) {
-  const workspace = await getUserWorkspace(userId);
-  if (!workspace) return null;
-
-  const [page] = await db
-    .select()
-    .from(pages)
-    .where(and(eq(pages.id, pageId), eq(pages.workspaceId, workspace.id)))
-    .limit(1);
-
-  if (!page) return null;
-
-  return { page, workspace };
-}
 
 // ─── Update Page Settings ───────────────────────────────────────────────────
 
