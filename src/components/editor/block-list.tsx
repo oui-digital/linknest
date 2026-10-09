@@ -662,20 +662,14 @@ function SortableBlockItem({
                       label={content.coverUrl ? "Replace" : "Upload"}
                       onError={onError}
                       onUpload={(url) =>
-                        onUpdate(
-                          block.id,
-                          { content: { ...content, coverUrl: url } } as Partial<Block>,
-                          { immediate: true },
-                        )
+                        onUpdate(block.id, {}, { immediate: true, contentPatch: { coverUrl: url } })
                       }
                     />
                     {typeof content.coverUrl === "string" && (
                       <button
-                        onClick={() => {
-                          const next: Record<string, unknown> = { ...content };
-                          delete next.coverUrl;
-                          onUpdate(block.id, { content: next }, { immediate: true });
-                        }}
+                        onClick={() =>
+                          onUpdate(block.id, {}, { immediate: true, contentPatch: { coverUrl: undefined } })
+                        }
                         className="text-xs text-gray-400 hover:text-red-500"
                       >
                         Remove
