@@ -254,3 +254,65 @@ describe("SaveCoordinator under concurrent edits", () => {
     expect(save).toHaveBeenLastCalledWith(a, { label: "x", url: "https://y.example/" });
   });
 });
+
+describe("SaveCoordinator with a delete in flight", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  // Regression (QA recheck): publishing while a delete was pending passed the
+  // barrier; the delete was then refused, leaving an unsaved edit behind a
+  // published page.
+  it("does not let flushAll pass until a pending delete is answered", async () => {
+    const a: SaveEntity = { kind: "block", id: "a" };
+    // The server keeps refusing this value, as it would.
+    const save = vi.fn<SaveFn>(async (_e, patch) =>
+      patch.url === "javascript:x" ? { ok: false, error: "Invalid URL" } : { ok: true },
+    );
+    const c = new SaveCoordinator({ save, debounceMs: 0 });
+    c.enqueue(a, { url: "javascript:x" });
+    await vi.runAllTimersAsync();
+    expect(c.status(a)).toBe("failed");
+
+    const refused = deferred<boolean>();
+    void c.holdWhile(a, refused.promise);
+    let settled = false;
+    const flushing = c.flushAll().then((r) => {
+      settled = true;
+      return r;
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(settled).toBe(false); // waiting for the delete's answer
+
+    refused.resolve(false); // the server refused the delete
+    const result = await flushing;
+    expect(result.ok).toBe(false); // the restored, still-failed edit blocks publishing
+  });
+
+  it("saves a restored pending edit before passing", async () => {
+    const a: SaveEntity = { kind: "block", id: "a" };
+    const save = vi.fn<SaveFn>(ok);
+    const c = new SaveCoordinator({ save, debounceMs: 500 });
+    c.enqueue(a, { label: "kept" });
+    const refused = deferred<boolean>();
+    void c.holdWhile(a, refused.promise);
+    const flushing = c.flushAll();
+    refused.resolve(false);
+    expect(await flushing).toEqual({ ok: true });
+    expect(save).toHaveBeenCalledWith(a, { label: "kept" });
+  });
+
+  it("drops the work once the delete is confirmed, and also waits for it", async () => {
+    const a: SaveEntity = { kind: "block", id: "a" };
+    const save = vi.fn<SaveFn>(ok);
+    const c = new SaveCoordinator({ save, debounceMs: 500 });
+    c.enqueue(a, { label: "gone" });
+    const deleted = deferred<boolean>();
+    void c.holdWhile(a, deleted.promise);
+    expect(c.isHolding()).toBe(true);
+    const flushing = c.flushAll();
+    deleted.resolve(true);
+    expect(await flushing).toEqual({ ok: true });
+    expect(save).not.toHaveBeenCalled();
+    expect(c.isHolding()).toBe(false);
+  });
+});

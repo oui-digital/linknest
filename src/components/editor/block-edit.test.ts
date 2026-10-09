@@ -32,3 +32,22 @@ describe("restoreBlock", () => {
     expect(restoreBlock(list, block("b", {}, 1)).map((b: { id: string }) => b.id)).toEqual(["a", "b", "c"]);
   });
 });
+
+describe("applyBlockEdit with style patches", () => {
+  // Regression (QA recheck): two colour changes within 500 ms; the second
+  // callback was created before the first landed and replaced the whole
+  // styleOverrides object, losing the first colour.
+  it("keeps both colours when they are patched one after the other", () => {
+    let list: Parameters<typeof applyBlockEdit>[0] = [block("a", { styleOverrides: { variant: "outline" } })];
+    list = applyBlockEdit(list, "a", {}, undefined, { bgColor: "#111111" }).blocks;
+    const { content } = applyBlockEdit(list, "a", {}, undefined, { textColor: "#EEEEEE" });
+    expect(content).toEqual({
+      styleOverrides: { variant: "outline", bgColor: "#111111", textColor: "#EEEEEE" },
+    });
+  });
+
+  it("removes a style key patched to undefined, and the object when empty", () => {
+    const list = [block("a", { alt: "x", styleOverrides: { variant: "outline" } })];
+    expect(applyBlockEdit(list, "a", {}, undefined, { variant: undefined }).content).toEqual({ alt: "x" });
+  });
+});

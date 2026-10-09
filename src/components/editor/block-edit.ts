@@ -1,6 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { blocks as blocksSchema } from "@/lib/db/schema";
 import { parseBlockContent } from "@/lib/blocks/content";
+import type { BlockStyleOverrides } from "@/lib/templates/theme";
 
 type Block = InferSelectModel<typeof blocksSchema>;
 
@@ -14,6 +15,8 @@ type Block = InferSelectModel<typeof blocksSchema>;
  * meanwhile. `updates.content`, by contrast, replaces content wholesale and
  * is only safe from a synchronous handler that read the current render.
  *
+ * `stylePatch` does the same one level down, for `content.styleOverrides`.
+ *
  * Returns the new list and the full content to save (content is always sent
  * whole because the server replaces it).
  */
@@ -22,11 +25,26 @@ export function applyBlockEdit(
   blockId: string,
   updates: Partial<Block>,
   contentPatch?: Record<string, unknown>,
+  stylePatch?: Partial<BlockStyleOverrides>,
 ): { blocks: Block[]; content?: Record<string, unknown> } {
   const current = blocks.find((b) => b.id === blockId);
   if (!current) return { blocks };
 
   let content = updates.content as Record<string, unknown> | undefined;
+  if (stylePatch) {
+    // Merged key by key into the CURRENT overrides: two colour changes in
+    // quick succession each keep the other (the colour inputs save after a
+    // pause, from a callback created before the other change landed).
+    const base = content ?? parseBlockContent(current.type, current.content);
+    const style: Record<string, unknown> = {
+      ...((base.styleOverrides as Record<string, unknown> | undefined) ?? {}),
+      ...stylePatch,
+    };
+    for (const key of Object.keys(style)) {
+      if (style[key] === undefined) delete style[key];
+    }
+    contentPatch = { ...contentPatch, styleOverrides: Object.keys(style).length > 0 ? style : undefined };
+  }
   if (contentPatch) {
     const merged: Record<string, unknown> = {
       ...(content ?? parseBlockContent(current.type, current.content)),

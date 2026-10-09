@@ -59,6 +59,7 @@ type Entry = {
 
 export class SaveCoordinator {
   private readonly entries = new Map<string, Entry>();
+  private readonly holds = new Set<Promise<void>>();
   private save: SaveFn;
   private readonly onChange: (() => void) | undefined;
   private readonly debounceMs: number;
@@ -119,6 +120,9 @@ export class SaveCoordinator {
    */
   async flushAll(): Promise<FlushResult> {
     for (let pass = 0; pass < MAX_FLUSH_PASSES; pass++) {
+      // A delete in flight decides whether its block's edits still matter:
+      // wait for it, so a refused delete puts them back before we check.
+      while (this.holds.size > 0) await Promise.allSettled([...this.holds]);
       const outcomes = await Promise.all(
         [...this.entries.values()]
           .filter((entry) => !entry.suspended)
@@ -146,6 +150,34 @@ export class SaveCoordinator {
    * operation that may remove it (a delete) is in flight. resume() puts it
    * back in the queue; forget() drops it once the removal is confirmed.
    */
+  /**
+   * Suspend an entity for the duration of an operation that may remove it,
+   * then forget its work if the operation reports removal, or resume it if
+   * not. flushAll() waits for every such operation, so a publish started
+   * during a delete cannot pass while the delete may still be refused.
+   */
+  holdWhile(entity: SaveEntity, removed: Promise<boolean>): Promise<void> {
+    this.suspend(entity);
+    const settled = removed
+      .catch(() => false)
+      .then((gone) => {
+        if (gone) this.forget(entity);
+        else this.resume(entity);
+      })
+      .finally(() => {
+        this.holds.delete(settled);
+        this.onChange?.();
+      });
+    this.holds.add(settled);
+    this.onChange?.();
+    return settled;
+  }
+
+  /** Whether an operation that may remove an entity (a delete) is in flight. */
+  isHolding(): boolean {
+    return this.holds.size > 0;
+  }
+
   suspend(entity: SaveEntity): void {
     const entry = this.entries.get(saveEntityKey(entity));
     if (!entry) return;

@@ -39,7 +39,11 @@ type Block = InferSelectModel<typeof blocksSchema>;
  * `contentPatch` changes only those content keys on the latest state; async
  * callbacks (uploads) must use it instead of `updates.content`.
  */
-type UpdateOptions = { immediate?: boolean; contentPatch?: Record<string, unknown> };
+type UpdateOptions = {
+  immediate?: boolean;
+  contentPatch?: Record<string, unknown>;
+  stylePatch?: Partial<BlockStyleOverrides>;
+};
 
 const BLOCK_PICKER: { type: BlockType; label: string }[] = [
   { type: "link", label: "Link" },
@@ -152,7 +156,13 @@ export function BlockList({
 
   const handleUpdateBlock = useCallback(
     (blockId: string, updates: Partial<Block>, options?: UpdateOptions) => {
-      const edit = applyBlockEdit(latestBlocks.current, blockId, updates, options?.contentPatch);
+      const edit = applyBlockEdit(
+        latestBlocks.current,
+        blockId,
+        updates,
+        options?.contentPatch,
+        options?.stylePatch,
+      );
       latestBlocks.current = edit.blocks;
       onBlocksChange(edit.blocks);
 
@@ -193,22 +203,22 @@ export function BlockList({
 
       // Hold the block's unsaved edits (neither sent nor dropped) until the
       // server answers: dropped only once the delete is confirmed, restored
-      // with their failed/pending state if it is refused.
-      saves.suspend(entity);
+      // with their failed/pending state if it is refused. Publishing waits
+      // for this answer (SaveCoordinator.holdWhile).
       latestBlocks.current = latestBlocks.current.filter((b) => b.id !== blockId);
       onBlocksChange(latestBlocks.current);
 
-      const result = await deleteBlock(blockId).catch(() => ({
+      const request = deleteBlock(blockId).catch(() => ({
         error: "Couldn't delete the block. Please try again.",
       }));
+      const held = saves.holdWhile(entity, request.then((r) => !r?.error));
+      const result = await request;
       if (result?.error) {
         latestBlocks.current = restoreBlock(latestBlocks.current, target);
         onBlocksChange(latestBlocks.current);
-        saves.resume(entity);
         onError(result.error);
-      } else {
-        saves.forget(entity);
       }
+      await held;
     },
     [blocks, saves, onBlocksChange, onError],
   );
@@ -352,27 +362,15 @@ function SortableBlockItem({
 
   const handleStyleChange = useCallback(
     (updates: Partial<BlockStyleOverrides>) => {
-      const newOverrides = { ...overrides, ...updates };
-      // Remove undefined/null keys
-      for (const k of Object.keys(newOverrides)) {
-        if ((newOverrides as Record<string, unknown>)[k] === undefined) {
-          delete (newOverrides as Record<string, unknown>)[k];
-        }
-      }
-      onUpdate(
-        block.id,
-        { content: { ...content, styleOverrides: newOverrides } as Record<string, unknown> },
-        { immediate: true },
-      );
+      // Only the changed keys: merged onto the latest overrides when applied.
+      onUpdate(block.id, {}, { immediate: true, stylePatch: updates });
     },
-    [block.id, content, overrides, onUpdate],
+    [block.id, onUpdate],
   );
 
   const handleResetStyle = useCallback(() => {
-    const rest: Record<string, unknown> = { ...content };
-    delete rest.styleOverrides;
-    onUpdate(block.id, { content: rest }, { immediate: true });
-  }, [block.id, content, onUpdate]);
+    onUpdate(block.id, {}, { immediate: true, contentPatch: { styleOverrides: undefined } });
+  }, [block.id, onUpdate]);
 
   return (
     <div
