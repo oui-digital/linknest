@@ -85,9 +85,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate type field (only "avatar" or omitted)
+    // Validate type field ("avatar", "thumbnail" or omitted)
     const typeField = formData.get("type") as string | null;
-    if (typeField && typeField !== "avatar") {
+    if (typeField && typeField !== "avatar" && typeField !== "thumbnail") {
       return NextResponse.json(
         { error: "Invalid type" },
         { status: 400 },

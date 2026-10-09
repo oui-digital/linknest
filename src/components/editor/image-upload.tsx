@@ -10,6 +10,8 @@ interface ImageUploadProps {
   className?: string;
   /** Avatars are round; block images keep their aspect ratio. */
   shape?: "circle" | "rect";
+  /** Server-side processing preset (see src/lib/image-processing.ts). */
+  uploadType?: "avatar" | "thumbnail";
 }
 
 export function ImageUpload({
@@ -19,6 +21,7 @@ export function ImageUpload({
   label = "Upload Image",
   className = "",
   shape = "circle",
+  uploadType,
 }: ImageUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -37,6 +40,7 @@ export function ImageUpload({
         // Upload via FormData to server-side processing route
         const formData = new FormData();
         formData.append("file", file);
+        if (uploadType) formData.append("type", uploadType);
 
         const res = await fetch("/api/upload/image", {
           method: "POST",
@@ -61,7 +65,7 @@ export function ImageUpload({
         if (inputRef.current) inputRef.current.value = "";
       }
     },
-    [onUpload, onError],
+    [onUpload, onError, uploadType],
   );
 
   const displayUrl = preview || currentUrl;

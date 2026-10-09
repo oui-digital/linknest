@@ -27,6 +27,16 @@ describe("processImage", () => {
     expect(meta.format).toBe("webp");
   });
 
+  it("thumbnail type: crops to 160x160 WebP", async () => {
+    const input = await createTestImage(1600, 900);
+    const output = await processImage(input, "thumbnail");
+
+    const meta = await sharp(output).metadata();
+    expect(meta.width).toBe(160);
+    expect(meta.height).toBe(160);
+    expect(meta.format).toBe("webp");
+  });
+
   it("default type: resizes to max 1200px width, WebP", async () => {
     const input = await createTestImage(2400, 1600);
     const output = await processImage(input);

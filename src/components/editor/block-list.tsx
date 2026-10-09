@@ -508,6 +508,79 @@ function SortableBlockItem({
               />
             </div>
           )}
+          {block.type === "link" && (
+            <>
+              <div>
+                <label className="text-xs font-medium text-gray-500">
+                  Description <span className="text-gray-400">(optional)</span>
+                </label>
+                <textarea
+                  value={(content.description as string | undefined) ?? ""}
+                  onChange={(e) =>
+                    onUpdate(block.id, {
+                      content: { ...content, description: e.target.value || undefined },
+                    } as Partial<Block>)
+                  }
+                  rows={2}
+                  maxLength={200}
+                  placeholder="A short line under the label"
+                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-500">
+                  Thumbnail <span className="text-gray-400">(optional)</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <ImageUpload
+                    currentUrl={(content.thumbnailUrl as string | undefined) ?? null}
+                    uploadType="thumbnail"
+                    label={content.thumbnailUrl ? "Replace" : "Upload"}
+                    onError={onError}
+                    onUpload={(url) =>
+                      onUpdate(
+                        block.id,
+                        { content: { ...content, thumbnailUrl: url } } as Partial<Block>,
+                        { immediate: true },
+                      )
+                    }
+                  />
+                  {typeof content.thumbnailUrl === "string" && (
+                    <button
+                      onClick={() => {
+                        const next: Record<string, unknown> = { ...content };
+                        delete next.thumbnailUrl;
+                        onUpdate(block.id, { content: next }, { immediate: true });
+                      }}
+                      className="text-xs text-gray-400 hover:text-red-500"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={content.featured === true}
+                  onChange={(e) =>
+                    onUpdate(
+                      block.id,
+                      { content: { ...content, featured: e.target.checked || undefined } } as Partial<Block>,
+                      { immediate: true },
+                    )
+                  }
+                  className="mt-0.5 rounded"
+                />
+                <span>
+                  <span className="text-xs font-medium text-gray-700">Featured button</span>
+                  <span className="block text-[11px] text-gray-400">
+                    Highlights this link in your theme&apos;s main colour, like a call to action.
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
           {/* Image blocks had no way to set an image at all: the type could be
               added from the picker but rendered nothing, and ImageUpload was
               imported by no one. */}
