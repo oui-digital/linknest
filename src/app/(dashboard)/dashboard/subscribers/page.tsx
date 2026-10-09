@@ -4,7 +4,9 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getUserWorkspace, getWorkspacePages } from "@/lib/queries";
 import { getLimit, hasFeature, type PlanId } from "@/lib/entitlements";
-import { countConfirmed, listSubscribers } from "@/lib/subscribers";
+import { countByStatus, countConfirmed, listSubscribers } from "@/lib/subscribers";
+
+const PAGE_SIZE = 100;
 import { SubscriberTable } from "@/components/dashboard/subscriber-table";
 
 export const metadata = { title: "Subscribers — LinkNest" };
@@ -12,7 +14,7 @@ export const metadata = { title: "Subscribers — LinkNest" };
 export default async function SubscribersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; p?: string }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -22,17 +24,32 @@ export default async function SubscribersPage({
 
   const plan = workspace.plan as PlanId;
   const pages = await getWorkspacePages(workspace.id);
-  const { page: selected } = await searchParams;
-  const pageId = pages.some((p) => p.id === selected) ? selected : undefined;
+  const { page: selected, p } = await searchParams;
+  const pageId = pages.some((pg) => pg.id === selected) ? selected : undefined;
+  const pageNumber = Math.max(1, Math.floor(Number(p)) || 1);
 
-  const [rows, confirmed] = await Promise.all([
-    listSubscribers(db, { workspaceId: workspace.id, pageId }),
+  const [rows, confirmed, counts] = await Promise.all([
+    listSubscribers(db, {
+      workspaceId: workspace.id,
+      pageId,
+      limit: PAGE_SIZE,
+      offset: (pageNumber - 1) * PAGE_SIZE,
+    }),
     countConfirmed(db, workspace.id),
+    countByStatus(db, { workspaceId: workspace.id, pageId }),
   ]);
+  const pageCount = Math.max(1, Math.ceil(counts.total / PAGE_SIZE));
+  const hrefFor = (n: number) => {
+    const qs = new URLSearchParams();
+    if (pageId) qs.set("page", pageId);
+    if (n > 1) qs.set("p", String(n));
+    const query = qs.toString();
+    return `/dashboard/subscribers${query ? `?${query}` : ""}`;
+  };
   const limit = getLimit(plan, "max_subscribers");
   const canExport = hasFeature(plan, "subscriber_export");
   const atCap = Number.isFinite(limit) && confirmed >= limit;
-  const pending = rows.filter((r) => r.status === "pending").length;
+  const pending = counts.pending;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -116,6 +133,27 @@ export default async function SubscribersPage({
             date: (r.confirmedAt ?? r.requestedAt).toISOString(),
           }))}
         />
+
+        {pageCount > 1 && (
+          <nav className="flex items-center justify-between text-xs text-gray-500" aria-label="Pages of subscribers">
+            <span>
+              {(pageNumber - 1) * PAGE_SIZE + 1}–{Math.min(pageNumber * PAGE_SIZE, counts.total)} of{" "}
+              {counts.total.toLocaleString()}
+            </span>
+            <span className="flex gap-3">
+              {pageNumber > 1 && (
+                <Link href={hrefFor(pageNumber - 1)} className="underline hover:text-gray-800">
+                  Newer
+                </Link>
+              )}
+              {pageNumber < pageCount && (
+                <Link href={hrefFor(pageNumber + 1)} className="underline hover:text-gray-800">
+                  Older
+                </Link>
+              )}
+            </span>
+          </nav>
+        )}
 
         <p className="text-xs leading-relaxed text-gray-400">
           Each page has its own list; people join only the list of the page they signed up on.

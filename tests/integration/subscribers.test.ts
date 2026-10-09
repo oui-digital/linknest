@@ -1,10 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { blocks, subscribers } from "@/lib/db/schema";
 import {
   claimUnsentConfirmations,
   completeSend,
   confirmSubscription,
+  countByStatus,
+  iterateSubscribers,
+  listSubscribers,
   deliverConfirmation,
   hashToken,
   purgeStalePending,
@@ -266,5 +269,55 @@ describe("retention", () => {
     expect(await row(stale.subscriberId)).toBeUndefined();
     expect(await row(gone.subscriberId)).toBeUndefined();
     expect((await row(fresh.subscriberId)).status).toBe("pending");
+  });
+});
+
+describe("pre-merge QA regressions (October 9)", () => {
+  async function audience(n: number, plan: "free" | "pro") {
+    const seeded = await pageWithForm({ plan });
+    await db.execute(sql`
+      INSERT INTO subscribers (workspace_id, page_id, email, email_canonical, status, consent_text, confirmed_at)
+      SELECT ${seeded.workspace.id}::uuid, ${seeded.page.id}::uuid, 'fan' || g || '@example.com',
+             'fan' || g || '@example.com', 'confirmed', 'QA consent', now()
+      FROM generate_series(1, ${n}) g`);
+    return seeded;
+  }
+
+  it("answers a full list identically for subscribed, pending and new addresses", async () => {
+    const { workspace, page, block } = await audience(99, "free");
+    const pending = claimOf(await subscribe(page, block, "pending@example.com"));
+    await db.insert(subscribers).values({
+      workspaceId: workspace.id, pageId: page.id, email: "last@example.com",
+      emailCanonical: "last@example.com", status: "confirmed", consentText: "x",
+    });
+
+    const outcomes = await Promise.all(
+      ["fan1@example.com", "pending@example.com", "new@example.com"].map(
+        async (email) => (await subscribe(page, block, email, later(SEND_CLAIM_TTL_MS + 1000))).outcome,
+      ),
+    );
+    expect(outcomes).toEqual(["list_full", "list_full", "list_full"]);
+    expect((await row(pending.subscriberId)).status).toBe("pending");
+  });
+
+  it("exports every subscriber of a large Pro list, in batches", async () => {
+    const { workspace } = await audience(10_001, "pro");
+    let exported = 0;
+    const seen = new Set<string>();
+    for await (const batch of iterateSubscribers(db, { workspaceId: workspace.id, status: "confirmed" })) {
+      exported += batch.length;
+      for (const r of batch) seen.add(r.id);
+    }
+    expect(exported).toBe(10_001);
+    expect(seen.size).toBe(10_001);
+  });
+
+  it("counts from SQL, independently of the page of rows shown", async () => {
+    const { workspace, page, block } = await audience(150, "pro");
+    claimOf(await subscribe(page, block, "waiting@example.com"));
+    expect(await listSubscribers(db, { workspaceId: workspace.id, limit: 100 })).toHaveLength(100);
+    expect(await countByStatus(db, { workspaceId: workspace.id })).toEqual({
+      confirmed: 150, pending: 1, unsubscribed: 0, total: 151,
+    });
   });
 });

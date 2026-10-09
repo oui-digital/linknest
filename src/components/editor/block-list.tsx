@@ -650,9 +650,7 @@ function SortableBlockItem({
                     type="text"
                     value={(content[key] as string | undefined) ?? ""}
                     onChange={(e) =>
-                      onUpdate(block.id, {
-                        content: { ...content, [key]: e.target.value || undefined },
-                      } as Partial<Block>)
+                      onUpdate(block.id, {}, { contentPatch: { [key]: e.target.value || undefined } })
                     }
                     maxLength={max}
                     placeholder={placeholder}

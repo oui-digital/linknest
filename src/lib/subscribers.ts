@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "crypto";
-import { and, asc, desc, eq, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { blocks, pages, subscribers } from "@/lib/db/schema";
 import type { Db, DbOrTx, Tx } from "@/lib/db/types";
 import { canonicalizeEmail } from "@/lib/email-normalize";
@@ -17,7 +17,8 @@ import { effectivePlan } from "@/lib/queries";
  *      └── purged 7 days after requestedAt                   └── purged after 30 days
  *
  * - A request is accepted only for a published page with a visible email
- *   block, and records the consent sentence shown with the form.
+ *   block, and records the consent sentence shown with the form. A full list
+ *   answers "list_full" for every address, known or not.
  * - The confirmation email is owned by one send attempt at a time (the
  *   "claim": attempt id + claimed-at, valid for 2 minutes). Taking a claim
  *   rotates the confirm token in the same statement, so the token in an email
@@ -168,6 +169,11 @@ export async function requestSubscription(
       .where(and(eq(subscribers.pageId, pageId), eq(subscribers.emailCanonical, canonical)))
       .for("update");
 
+    // Checked before anything that depends on whether this address is known:
+    // a full list must answer every address the same way, or the public form
+    // would reveal who is subscribed.
+    if (await capReached(tx, page.workspaceId)) return { outcome: "list_full" };
+
     if (existing?.status === "confirmed") return { outcome: "already_confirmed" };
 
     if (existing?.status === "pending") {
@@ -182,8 +188,6 @@ export async function requestSubscription(
         existing.confirmTokenExpiresAt > now;
       if (claimActive || recentlySent) return { outcome: "deferred" };
     }
-
-    if (await capReached(tx, page.workspaceId)) return { outcome: "list_full" };
 
     const claim = claimFields(now);
     const fresh = {
@@ -438,29 +442,89 @@ export type SubscriberRow = {
   unsubscribedAt: Date | null;
 };
 
-export function listSubscribers(
-  db: Db,
-  { workspaceId, pageId, status }: { workspaceId: string; pageId?: string; status?: string },
-): Promise<SubscriberRow[]> {
+export type SubscriberFilter = { workspaceId: string; pageId?: string; status?: string };
+
+function filterConditions({ workspaceId, pageId, status }: SubscriberFilter): SQL {
   const conditions = [eq(subscribers.workspaceId, workspaceId)];
   if (pageId) conditions.push(eq(subscribers.pageId, pageId));
   if (status) conditions.push(eq(subscribers.status, status));
+  return and(...conditions)!;
+}
+
+const rowColumns = {
+  id: subscribers.id,
+  email: subscribers.email,
+  status: subscribers.status,
+  pageId: subscribers.pageId,
+  pageSlug: pages.slug,
+  requestedAt: subscribers.requestedAt,
+  confirmedAt: subscribers.confirmedAt,
+  unsubscribedAt: subscribers.unsubscribedAt,
+};
+
+/** One page of the dashboard list, newest first. */
+export function listSubscribers(
+  db: Db,
+  filter: SubscriberFilter & { limit?: number; offset?: number },
+): Promise<SubscriberRow[]> {
   return db
-    .select({
-      id: subscribers.id,
-      email: subscribers.email,
-      status: subscribers.status,
-      pageId: subscribers.pageId,
-      pageSlug: pages.slug,
-      requestedAt: subscribers.requestedAt,
-      confirmedAt: subscribers.confirmedAt,
-      unsubscribedAt: subscribers.unsubscribedAt,
-    })
+    .select(rowColumns)
     .from(subscribers)
     .innerJoin(pages, eq(pages.id, subscribers.pageId))
-    .where(and(...conditions))
-    .orderBy(desc(subscribers.requestedAt))
-    .limit(10_000);
+    .where(filterConditions(filter))
+    .orderBy(desc(subscribers.requestedAt), desc(subscribers.id))
+    .limit(filter.limit ?? 100)
+    .offset(filter.offset ?? 0);
+}
+
+/** Counts per status, from SQL (never from a displayed page of rows). */
+export async function countByStatus(
+  db: Db,
+  filter: Omit<SubscriberFilter, "status">,
+): Promise<{ confirmed: number; pending: number; unsubscribed: number; total: number }> {
+  const rows = await db
+    .select({ status: subscribers.status, n: sql<number>`count(*)`.mapWith(Number) })
+    .from(subscribers)
+    .where(filterConditions(filter))
+    .groupBy(subscribers.status);
+  const counts = { confirmed: 0, pending: 0, unsubscribed: 0, total: 0 };
+  for (const { status, n } of rows) {
+    if (status === "confirmed" || status === "pending" || status === "unsubscribed") counts[status] = n;
+    counts.total += n;
+  }
+  return counts;
+}
+
+/**
+ * Every matching subscriber, in batches, for the CSV export. Complete
+ * regardless of list size; memory stays at one batch.
+ *
+ * Keyset on the id alone. A (created_at, id) cursor round-trips through a
+ * JavaScript Date, which drops Postgres's microseconds, so rows created in
+ * the same instant were re-read forever.
+ */
+export async function* iterateSubscribers(
+  db: Db,
+  filter: SubscriberFilter,
+  batchSize = 1000,
+): AsyncGenerator<SubscriberRow[]> {
+  let afterId: string | null = null;
+  for (;;) {
+    const where: SQL = afterId
+      ? and(filterConditions(filter), gt(subscribers.id, afterId))!
+      : filterConditions(filter);
+    const batch: SubscriberRow[] = await db
+      .select(rowColumns)
+      .from(subscribers)
+      .innerJoin(pages, eq(pages.id, subscribers.pageId))
+      .where(where)
+      .orderBy(asc(subscribers.id))
+      .limit(batchSize);
+    if (batch.length === 0) return;
+    yield batch;
+    if (batch.length < batchSize) return;
+    afterId = batch[batch.length - 1].id;
+  }
 }
 
 export async function deleteSubscriber(db: Db, { workspaceId, id }: { workspaceId: string; id: string }) {
@@ -471,20 +535,25 @@ export async function deleteSubscriber(db: Db, { workspaceId, id }: { workspaceI
   return rows.length > 0;
 }
 
-/** RFC 4180 CSV. Cells that a spreadsheet would run as a formula are prefixed with '. */
-export function toCsv(rows: SubscriberRow[]): string {
+export const CSV_HEADER = "email,status,page,requested_at,confirmed_at,unsubscribed_at\r\n";
+
+/** RFC 4180 CSV rows. Cells that a spreadsheet would run as a formula are prefixed with '. */
+export function csvRows(rows: SubscriberRow[]): string {
   const cell = (value: string) => {
     const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
     return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
   };
   const iso = (d: Date | null) => (d ? d.toISOString() : "");
-  const lines = [
-    ["email", "status", "page", "requested_at", "confirmed_at", "unsubscribed_at"].join(","),
-    ...rows.map((r) =>
-      [r.email, r.status, r.pageSlug, iso(r.requestedAt), iso(r.confirmedAt), iso(r.unsubscribedAt)]
-        .map(cell)
-        .join(","),
-    ),
-  ];
-  return `${lines.join("\r\n")}\r\n`;
+  return rows
+    .map(
+      (r) =>
+        [r.email, r.status, r.pageSlug, iso(r.requestedAt), iso(r.confirmedAt), iso(r.unsubscribedAt)]
+          .map(cell)
+          .join(",") + "\r\n",
+    )
+    .join("");
+}
+
+export function toCsv(rows: SubscriberRow[]): string {
+  return CSV_HEADER + csvRows(rows);
 }
