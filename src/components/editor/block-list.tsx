@@ -647,12 +647,12 @@ function SortableBlockItem({
                       key={size}
                       role="radio"
                       aria-checked={current === size}
-                      onClick={() => {
-                        const next: Record<string, unknown> = { ...content };
-                        if (size === "default") delete next.size;
-                        else next.size = size;
-                        onUpdate(block.id, { content: next }, { immediate: true });
-                      }}
+                      onClick={() =>
+                        onUpdate(block.id, {}, {
+                          immediate: true,
+                          contentPatch: { size: size === "default" ? undefined : size },
+                        })
+                      }
                       className={`rounded px-2 py-1 text-[11px] font-medium capitalize transition-colors ${
                         current === size
                           ? "bg-gray-900 text-white"
