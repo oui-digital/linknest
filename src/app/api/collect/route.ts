@@ -5,6 +5,7 @@ import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/request-ip";
 import { normalizeSlug } from "@/lib/slugs";
 import { SITE_URL } from "@/lib/site";
+import { canonicalReferrer } from "@/lib/analytics";
 
 /**
  * First-party analytics ingest for public pages.
@@ -26,6 +27,8 @@ const eventSchema = z.object({
   blockId: z.union([z.uuid(), z.literal("banner")]).optional(),
   url: z.string().max(2048).optional(),
   label: z.string().max(255).optional(),
+  // Hostname of document.referrer, page views only. Never a path or query.
+  referrer: z.string().max(253).optional(),
 });
 
 let client: PostHog | null = null;
@@ -90,6 +93,11 @@ export async function POST(request: NextRequest) {
   if (!posthog) return new NextResponse(null, { status: 204 });
 
   const slug = normalizeSlug(parsed.data.slug);
+  // Malformed referrers are dropped, not rejected: the view still counts.
+  const referringDomain =
+    parsed.data.event === "$pageview" && parsed.data.referrer
+      ? canonicalReferrer(parsed.data.referrer)
+      : null;
 
   try {
     // captureImmediate() sends the event and awaits the HTTP request before
@@ -111,6 +119,7 @@ export async function POST(request: NextRequest) {
         ...(parsed.data.blockId ? { block_id: parsed.data.blockId } : {}),
         ...(parsed.data.url ? { url: parsed.data.url } : {}),
         ...(parsed.data.label ? { label: parsed.data.label } : {}),
+        ...(referringDomain ? { $referring_domain: referringDomain } : {}),
       },
     });
   } catch (error) {

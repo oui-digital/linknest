@@ -58,7 +58,16 @@ export function PageBeacon({ slug }: { slug: string }) {
       }).catch(() => {});
     };
 
-    send({ event: "$pageview" });
+    // Only the referring site's hostname, and only when it is another site:
+    // the full address can carry personal data in its path or query.
+    let referrer: string | undefined;
+    try {
+      const host = new URL(document.referrer).hostname;
+      if (host && host !== location.hostname) referrer = host;
+    } catch {
+      // No referrer (typed address, app, privacy setting): leave it unset.
+    }
+    send({ event: "$pageview", referrer });
 
     // `click` fires for left-clicks, modifier-clicks (which open a new tab) and
     // keyboard activation; `auxclick` with button 1 is the middle click. A

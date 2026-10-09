@@ -144,3 +144,27 @@ describe("POST /api/collect", () => {
     expect(posthog.captureImmediate).not.toHaveBeenCalled();
   });
 });
+
+describe("referring domain", () => {
+  it("forwards the cleaned referrer domain on page views", async () => {
+    await beacon({ event: "$pageview", slug: "jordan", referrer: "l.instagram.com" });
+    expect(posthog.captureImmediate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: expect.objectContaining({ $referring_domain: "instagram.com" }),
+      }),
+    );
+  });
+
+  it("still counts the view when the referrer is malformed", async () => {
+    const res = await beacon({ event: "$pageview", slug: "jordan", referrer: "not a host/path" });
+    expect(res.status).toBe(204);
+    const props = posthog.captureImmediate.mock.calls[0][0].properties;
+    expect(props).not.toHaveProperty("$referring_domain");
+  });
+
+  it("never attaches a referrer to link clicks", async () => {
+    await beacon({ event: "link_click", slug: "jordan", referrer: "example.com" });
+    const props = posthog.captureImmediate.mock.calls[0][0].properties;
+    expect(props).not.toHaveProperty("$referring_domain");
+  });
+});
