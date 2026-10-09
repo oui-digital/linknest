@@ -106,6 +106,7 @@ export default async function DashboardPage() {
               {pages.map((page) => (
                 <AnalyticsCard
                   key={page.id}
+                  pageId={page.id}
                   slug={page.slug}
                   title={page.title}
                 />

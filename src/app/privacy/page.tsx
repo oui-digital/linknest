@@ -26,7 +26,7 @@ export default function PrivacyPage() {
             Privacy Policy
           </h1>
           <p className="mt-4 text-sm text-slate">
-            Last updated: February 10, 2026
+            Last updated: October 9, 2026
           </p>
 
           {/* 1. Scope and Applicability */}
@@ -118,13 +118,23 @@ export default function PrivacyPage() {
               <ul className="ml-6 list-disc space-y-2">
                 <li>Page views</li>
                 <li>
+                  The domain of the page that linked to the visited page, as
+                  reported by the visitor&apos;s browser (for example
+                  instagram.com). Only the domain is kept; the full address is
+                  never stored. Browsers often omit it, in which case nothing is
+                  recorded.
+                </li>
+                <li>
                   Link click events (including the link label, destination URL,
-                  and internal block identifier)
+                  and internal block identifier). Clicks on social icons, the
+                  announcement banner and embedded media count as link clicks.
                 </li>
               </ul>
               <p>
-                Analytics are implemented using PostHog with memory-only
-                persistence. No analytics cookies or local storage are used.
+                Events are sent to our own server and forwarded to PostHog with a
+                random identifier generated for each event, without cookies,
+                local storage or visitor IP addresses. Events cannot be linked to
+                one another or to a visitor.
               </p>
             </div>
 
@@ -225,8 +235,9 @@ export default function PrivacyPage() {
             </h3>
             <div className="mt-3 space-y-4 text-[15px] leading-relaxed text-slate">
               <p>
-                We do not use analytics cookies. Analytics data is collected in
-                memory only and discarded when a visitor leaves the page.
+                We do not use analytics cookies, local storage or any other
+                identifier stored on the visitor&apos;s device. Each analytics
+                event is recorded on its own, with no visitor identity.
               </p>
               <p>
                 We do not use advertising cookies or third-party tracking pixels.

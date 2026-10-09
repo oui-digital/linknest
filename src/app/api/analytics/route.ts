@@ -1,16 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { blocks } from "@/lib/db/schema";
 import { getUserWorkspace, getWorkspacePages } from "@/lib/queries";
 import { getLimit, type PlanId } from "@/lib/entitlements";
 import { normalizeSlug } from "@/lib/slugs";
 import { SITE_URL } from "@/lib/site";
+import {
+  DAILY_QUERY,
+  SOCIAL_DESTINATIONS_QUERY,
+  TOP_BLOCKS_QUERY,
+  TOP_SOURCES_QUERY,
+  clampDays,
+  clicksPerView,
+  dayKeys,
+  dayLabels,
+  denseSeries,
+  mergeTopLinks,
+  type BlockRow,
+  type DestinationRow,
+  type TopLink,
+} from "@/lib/analytics";
 
 /**
- * GET /api/analytics?slug=<page-slug>
+ * GET /api/analytics?slug=<page-slug>&days=7|30|90&view=summary|full
  *
- * Queries PostHog for pageview and link-click data for a specific page.
- * The window follows the workspace plan (7 days free, 90 days Pro).
+ * Views and link clicks for one page from PostHog. `days` is capped by the
+ * plan (7 days free, 90 days Pro). `view=full` adds the top links and top
+ * referring domains; the dashboard cards ask for the summary only.
  */
+export type AnalyticsResponse = {
+  days: number;
+  maxDays: number;
+  configured: boolean;
+  labels: string[];
+  views: { total: number | null; daily: number[] };
+  clicks: { total: number | null; daily: number[] };
+  /** Total link clicks ÷ views. Can exceed 1. Null without views. */
+  clicksPerView: number | null;
+  topLinks?: TopLink[];
+  topSources?: { source: string; views: number }[];
+  error?: string;
+};
+
 export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -22,7 +55,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No workspace" }, { status: 400 });
   }
 
-  const rawSlug = request.nextUrl.searchParams.get("slug");
+  const params = request.nextUrl.searchParams;
+  const rawSlug = params.get("slug");
   if (!rawSlug) {
     return NextResponse.json({ error: "Missing slug" }, { status: 400 });
   }
@@ -35,10 +69,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Page not found" }, { status: 404 });
   }
 
-  // Plan-scoped window. This was hardcoded to 7 days for everyone, so Pro's
-  // advertised 90-day history did not exist.
-  const days = getLimit(workspace.plan as PlanId, "analytics_days");
-  const emptyLabels = getDayLabels(days);
+  const maxDays = getLimit(workspace.plan as PlanId, "analytics_days");
+  const days = clampDays(Number(params.get("days")) || null, maxDays);
+  const full = params.get("view") === "full";
+  const keys = dayKeys(days);
+  const labels = dayLabels(keys);
+  const base = { days, maxDays, labels };
 
   const apiKey = process.env.POSTHOG_PERSONAL_API_KEY;
   const projectId = process.env.POSTHOG_PROJECT_ID;
@@ -52,13 +88,14 @@ export async function GET(request: NextRequest) {
       "[analytics] POSTHOG_PERSONAL_API_KEY / POSTHOG_PROJECT_ID are not set — " +
         "analytics is returning empty data for every user.",
     );
-    return NextResponse.json({
-      total: 0,
-      clicks: 0,
-      daily: Array(days).fill(0),
-      labels: emptyLabels,
-      days,
+    const zeros = Array(days).fill(0);
+    return json({
+      ...base,
       configured: false,
+      views: { total: 0, daily: zeros },
+      clicks: { total: 0, daily: zeros },
+      clicksPerView: null,
+      ...(full ? { topLinks: [], topSources: [] } : {}),
     });
   }
 
@@ -70,19 +107,11 @@ export async function GET(request: NextRequest) {
   const urls = [canonicalUrl, `${canonicalUrl}/`];
 
   // HogQL via /query/. The previous implementation posted to
-  // /api/projects/:id/insights/trend/, which PostHog has retired — it answers
-  // 403 "Legacy insight endpoints are not available for this user", so the
-  // dashboard could never have shown a number regardless of the API key.
-  const HOGQL = `
-    SELECT toDate(timestamp) AS day, count() AS c
-    FROM events
-    WHERE event = {event}
-      AND properties.$current_url IN {urls}
-      AND timestamp >= now() - INTERVAL {days} DAY
-    GROUP BY day
-    ORDER BY day`;
-
-  async function queryDaily(event: string): Promise<Map<string, number>> {
+  // /api/projects/:id/insights/trend/, which PostHog has retired.
+  async function hogql<Row extends unknown[]>(
+    query: string,
+    values: Record<string, unknown>,
+  ): Promise<Row[]> {
     const res = await fetch(`${host}/api/projects/${projectId}/query/`, {
       method: "POST",
       headers: {
@@ -90,83 +119,113 @@ export async function GET(request: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        query: {
-          kind: "HogQLQuery",
-          query: HOGQL,
-          // Parameterized, not interpolated — the slug reaches this from a
-          // query string.
-          values: { event, urls, days },
-        },
+        query: { kind: "HogQLQuery", query, values: { urls, days, ...values } },
       }),
+      cache: "no-store",
     });
-
     if (!res.ok) {
-      throw new Error(
-        `PostHog query failed for ${event}: ${res.status} ${await res.text()}`,
-      );
+      throw new Error(`PostHog query failed: ${res.status} ${await res.text()}`);
     }
-
-    const body = (await res.json()) as { results?: [string, number][] };
-    return new Map((body.results ?? []).map(([day, c]) => [day, Number(c)]));
+    const body = (await res.json()) as { results?: Row[] };
+    return body.results ?? [];
   }
 
+  const daily = async (event: string) =>
+    new Map(
+      (await hogql<[string, number]>(DAILY_QUERY, { event })).map(([day, c]) => [
+        String(day).slice(0, 10),
+        Number(c),
+      ]),
+    );
+
   try {
-    const [viewsByDay, clicksByDay] = await Promise.all([
-      queryDaily("$pageview"),
-      // Clicks were captured on public pages but never queried, so the single
-      // most useful metric for a link-in-bio product was invisible to its owner.
-      queryDaily("link_click").catch(() => new Map<string, number>()),
+    const [viewsByDay, clicksByDay, ranked, sources] = await Promise.all([
+      daily("$pageview"),
+      daily("link_click"),
+      full ? hogql<[string, number, number, string | null]>(TOP_BLOCKS_QUERY, {}) : null,
+      full ? hogql<[string, number]>(TOP_SOURCES_QUERY, {}) : null,
     ]);
 
-    // PostHog returns only days that have events; expand to a dense series so
-    // the sparkline's bars line up with its labels.
-    const daily: number[] = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      daily.push(viewsByDay.get(d.toISOString().slice(0, 10)) ?? 0);
+    const viewsDaily = denseSeries(viewsByDay, keys);
+    const clicksDaily = denseSeries(clicksByDay, keys);
+    const viewsTotal = viewsDaily.reduce((sum, n) => sum + n, 0);
+    const clicksTotal = clicksDaily.reduce((sum, n) => sum + n, 0);
+
+    const response: AnalyticsResponse = {
+      ...base,
+      configured: true,
+      views: { total: viewsTotal, daily: viewsDaily },
+      clicks: { total: clicksTotal, daily: clicksDaily },
+      clicksPerView: clicksPerView(clicksTotal, viewsTotal),
+    };
+
+    if (ranked && sources) {
+      const rows: BlockRow[] = ranked.map(([blockId, clicks, plays, label]) => ({
+        blockId: String(blockId),
+        clicks: Number(clicks),
+        plays: Number(plays),
+        label: label ? String(label) : null,
+      }));
+
+      const pageBlocks = await db
+        .select({
+          id: blocks.id,
+          type: blocks.type,
+          label: blocks.label,
+          url: blocks.url,
+          isVisible: blocks.isVisible,
+          content: blocks.content,
+        })
+        .from(blocks)
+        .where(eq(blocks.pageId, page.id));
+
+      const socialIds = rows
+        .map((r) => r.blockId)
+        .filter((id) => pageBlocks.some((b) => b.id === id && b.type === "socials"));
+
+      const destinations: DestinationRow[] =
+        socialIds.length > 0
+          ? (
+              await hogql<[string, string, string | null, number]>(SOCIAL_DESTINATIONS_QUERY, {
+                blockIds: socialIds,
+              })
+            ).map(([blockId, url, label, clicks]) => ({
+              blockId: String(blockId),
+              url: String(url),
+              label: label ? String(label) : null,
+              clicks: Number(clicks),
+            }))
+          : [];
+
+      response.topLinks = mergeTopLinks(rows, destinations, pageBlocks);
+      response.topSources = sources.map(([source, views]) => ({
+        source: String(source ?? ""),
+        views: Number(views),
+      }));
     }
 
-    const total = daily.reduce((sum, n) => sum + n, 0);
-    const clickTotal = [...clicksByDay.values()].reduce((sum, n) => sum + n, 0);
-
-    return NextResponse.json({
-      total,
-      clicks: clickTotal,
-      daily,
-      labels: emptyLabels,
-      days,
-      configured: true,
-    });
+    return json(response);
   } catch (error) {
     console.error("[analytics] PostHog query failed:", error);
     // 502 rather than a 200 full of zeros: an outage used to be indistinguishable
     // from "nobody visited your page", which is worse than showing an error.
-    return NextResponse.json(
+    return json(
       {
-        total: null,
-        clicks: null,
-        daily: [],
-        labels: emptyLabels,
-        days,
+        ...base,
         configured: true,
+        views: { total: null, daily: [] },
+        clicks: { total: null, daily: [] },
+        clicksPerView: null,
         error: "Analytics are temporarily unavailable.",
       },
-      { status: 502 },
+      502,
     );
   }
 }
 
-function getDayLabels(days: number): string[] {
-  const labels: string[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    labels.push(
-      days > 14
-        ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-        : d.toLocaleDateString("en-US", { weekday: "short" }),
-    );
-  }
-  return labels;
+function json(body: AnalyticsResponse, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "private, max-age=60" },
+  });
 }
