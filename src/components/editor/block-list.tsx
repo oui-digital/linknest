@@ -517,9 +517,7 @@ function SortableBlockItem({
                 <textarea
                   value={(content.description as string | undefined) ?? ""}
                   onChange={(e) =>
-                    onUpdate(block.id, {
-                      content: { ...content, description: e.target.value || undefined },
-                    } as Partial<Block>)
+                    onUpdate(block.id, {}, { contentPatch: { description: e.target.value || undefined } })
                   }
                   rows={2}
                   maxLength={200}
@@ -538,20 +536,16 @@ function SortableBlockItem({
                     label={content.thumbnailUrl ? "Replace" : "Upload"}
                     onError={onError}
                     onUpload={(url) =>
-                      onUpdate(
-                        block.id,
-                        { content: { ...content, thumbnailUrl: url } } as Partial<Block>,
-                        { immediate: true },
-                      )
+                      // contentPatch: merged onto the block as it is when the
+                      // upload finishes, not as it was when it started.
+                      onUpdate(block.id, {}, { immediate: true, contentPatch: { thumbnailUrl: url } })
                     }
                   />
                   {typeof content.thumbnailUrl === "string" && (
                     <button
-                      onClick={() => {
-                        const next: Record<string, unknown> = { ...content };
-                        delete next.thumbnailUrl;
-                        onUpdate(block.id, { content: next }, { immediate: true });
-                      }}
+                      onClick={() =>
+                        onUpdate(block.id, {}, { immediate: true, contentPatch: { thumbnailUrl: undefined } })
+                      }
                       className="text-xs text-gray-400 hover:text-red-500"
                     >
                       Remove
@@ -564,11 +558,10 @@ function SortableBlockItem({
                   type="checkbox"
                   checked={content.featured === true}
                   onChange={(e) =>
-                    onUpdate(
-                      block.id,
-                      { content: { ...content, featured: e.target.checked || undefined } } as Partial<Block>,
-                      { immediate: true },
-                    )
+                    onUpdate(block.id, {}, {
+                      immediate: true,
+                      contentPatch: { featured: e.target.checked || undefined },
+                    })
                   }
                   className="mt-0.5 rounded"
                 />
@@ -604,9 +597,7 @@ function SortableBlockItem({
                   type="text"
                   value={(content.alt as string) ?? ""}
                   onChange={(e) =>
-                    onUpdate(block.id, {
-                      content: { ...content, alt: e.target.value },
-                    } as Partial<Block>)
+                    onUpdate(block.id, {}, { contentPatch: { alt: e.target.value } })
                   }
                   placeholder="Describe the image for screen readers"
                   maxLength={255}
@@ -621,9 +612,7 @@ function SortableBlockItem({
               <textarea
                 value={(content.text as string) ?? block.label ?? ""}
                 onChange={(e) =>
-                  onUpdate(block.id, {
-                    content: { ...content, text: e.target.value },
-                  } as Partial<Block>)
+                  onUpdate(block.id, {}, { contentPatch: { text: e.target.value } })
                 }
                 rows={3}
                 maxLength={5000}
@@ -636,11 +625,7 @@ function SortableBlockItem({
             <SocialsEditor
               items={(content.items as SocialItem[] | undefined) ?? []}
               onChange={(items) =>
-                onUpdate(
-                  block.id,
-                  { content: { ...content, items } } as Partial<Block>,
-                  { immediate: true },
-                )
+                onUpdate(block.id, {}, { immediate: true, contentPatch: { items } })
               }
             />
           )}
