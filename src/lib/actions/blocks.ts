@@ -77,13 +77,15 @@ function prepareContent(
   // Uploaded images are never Safe-Browsing scanned, so they must be our own
   // assets: a third-party URL here would be an unscanned destination and a
   // tracking pixel on every visit.
-  if (typeof content.imageUrl === "string" && content.imageUrl) {
-    const result = normalizeUrl(content.imageUrl);
+  for (const key of ["imageUrl", "thumbnailUrl"] as const) {
+    const value = content[key];
+    if (typeof value !== "string" || !value) continue;
+    const result = normalizeUrl(value);
     if ("error" in result) return { error: "Invalid image URL." };
     if (!isOwnAssetUrl(result.url)) {
       return { error: "Images must be uploaded through LinkNest." };
     }
-    content.imageUrl = result.url;
+    content[key] = result.url;
   }
 
   // Social icons: re-derive every URL on the server and require the declared

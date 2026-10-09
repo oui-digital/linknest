@@ -74,3 +74,20 @@ describe("socials content", () => {
     });
   });
 });
+
+describe("link card content", () => {
+  it("accepts a thumbnail, description and featured flag", () => {
+    expect(
+      blockContentWriters.link.safeParse({
+        thumbnailUrl: "https://cdn.example/t.webp",
+        description: "New episode every Friday",
+        featured: true,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects an over-long description and a non-boolean featured flag", () => {
+    expect(blockContentWriters.link.safeParse({ description: "x".repeat(201) }).success).toBe(false);
+    expect(blockContentWriters.link.safeParse({ featured: "yes" }).success).toBe(false);
+  });
+});

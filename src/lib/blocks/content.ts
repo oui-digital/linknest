@@ -37,7 +37,14 @@ const styleOverridesShape = {
   buttonStyle: z.string().max(32).optional(),
 };
 
-const linkShape = {};
+const linkShape = {
+  // Uploaded square image shown at the start of the button (R2 asset only).
+  thumbnailUrl: z.string().max(2048).optional(),
+  // Supporting line under the label.
+  description: z.string().max(200).optional(),
+  // Render as the page's prominent call to action.
+  featured: z.boolean().optional(),
+};
 const headerShape = {};
 const textShape = { text: z.string().max(5000).optional() };
 const dividerShape = {};

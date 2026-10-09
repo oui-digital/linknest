@@ -3,8 +3,13 @@ import type { InferSelectModel } from "drizzle-orm";
 import type { blocks as blocksSchema, pages } from "@/lib/db/schema";
 import type { LayoutType } from "@/lib/templates";
 import type { ThemeTokens, BlockStyleOverrides } from "@/lib/templates/theme";
-import { themeToCssVars, computeBlockResolvedStyle } from "@/lib/templates/theme";
+import {
+  themeToCssVars,
+  computeBlockResolvedStyle,
+  featuredLinkStyle,
+} from "@/lib/templates/theme";
 import { getGoogleFontsUrl } from "@/lib/templates/fonts";
+import { parseBlockContent } from "@/lib/blocks/content";
 import { BlockRenderer } from "@/components/blocks/block-renderer";
 import { AvatarFallback } from "@/components/ui/avatar-fallback";
 
@@ -178,10 +183,15 @@ function resolveBlockStyle(
   theme: ThemeTokens,
   block: Block,
 ): React.CSSProperties | undefined {
-  const content = block.content as Record<string, unknown> | null;
-  const overrides = content?.styleOverrides as BlockStyleOverrides | undefined;
-  if (!overrides || Object.keys(overrides).length === 0) return undefined;
-  return computeBlockResolvedStyle(theme, overrides) as React.CSSProperties;
+  const content = parseBlockContent(block.type, block.content);
+  const overrides = content.styleOverrides as BlockStyleOverrides | undefined;
+  const featured = block.type === "link" && content.featured === true;
+
+  let style: Record<string, string> = featured ? featuredLinkStyle(theme) : {};
+  if (overrides && Object.keys(overrides).length > 0) {
+    style = { ...style, ...computeBlockResolvedStyle(theme, overrides) };
+  }
+  return Object.keys(style).length > 0 ? (style as React.CSSProperties) : undefined;
 }
 
 export function BlockLayout({

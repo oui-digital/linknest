@@ -508,6 +508,72 @@ function SortableBlockItem({
               />
             </div>
           )}
+          {block.type === "link" && (
+            <>
+              <div>
+                <label className="text-xs font-medium text-gray-500">
+                  Description <span className="text-gray-400">(optional)</span>
+                </label>
+                <textarea
+                  value={(content.description as string | undefined) ?? ""}
+                  onChange={(e) =>
+                    onUpdate(block.id, {}, { contentPatch: { description: e.target.value || undefined } })
+                  }
+                  rows={2}
+                  maxLength={200}
+                  placeholder="A short line under the label"
+                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-500">
+                  Thumbnail <span className="text-gray-400">(optional)</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <ImageUpload
+                    currentUrl={(content.thumbnailUrl as string | undefined) ?? null}
+                    uploadType="thumbnail"
+                    label={content.thumbnailUrl ? "Replace" : "Upload"}
+                    onError={onError}
+                    onUpload={(url) =>
+                      // contentPatch: merged onto the block as it is when the
+                      // upload finishes, not as it was when it started.
+                      onUpdate(block.id, {}, { immediate: true, contentPatch: { thumbnailUrl: url } })
+                    }
+                  />
+                  {typeof content.thumbnailUrl === "string" && (
+                    <button
+                      onClick={() =>
+                        onUpdate(block.id, {}, { immediate: true, contentPatch: { thumbnailUrl: undefined } })
+                      }
+                      className="text-xs text-gray-400 hover:text-red-500"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={content.featured === true}
+                  onChange={(e) =>
+                    onUpdate(block.id, {}, {
+                      immediate: true,
+                      contentPatch: { featured: e.target.checked || undefined },
+                    })
+                  }
+                  className="mt-0.5 rounded"
+                />
+                <span>
+                  <span className="text-xs font-medium text-gray-700">Featured button</span>
+                  <span className="block text-[11px] text-gray-400">
+                    Highlights this link in your theme&apos;s main colour, like a call to action.
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
           {/* Image blocks had no way to set an image at all: the type could be
               added from the picker but rendered nothing, and ImageUpload was
               imported by no one. */}
@@ -531,9 +597,7 @@ function SortableBlockItem({
                   type="text"
                   value={(content.alt as string) ?? ""}
                   onChange={(e) =>
-                    onUpdate(block.id, {
-                      content: { ...content, alt: e.target.value },
-                    } as Partial<Block>)
+                    onUpdate(block.id, {}, { contentPatch: { alt: e.target.value } })
                   }
                   placeholder="Describe the image for screen readers"
                   maxLength={255}
@@ -548,9 +612,7 @@ function SortableBlockItem({
               <textarea
                 value={(content.text as string) ?? block.label ?? ""}
                 onChange={(e) =>
-                  onUpdate(block.id, {
-                    content: { ...content, text: e.target.value },
-                  } as Partial<Block>)
+                  onUpdate(block.id, {}, { contentPatch: { text: e.target.value } })
                 }
                 rows={3}
                 maxLength={5000}
@@ -563,11 +625,7 @@ function SortableBlockItem({
             <SocialsEditor
               items={(content.items as SocialItem[] | undefined) ?? []}
               onChange={(items) =>
-                onUpdate(
-                  block.id,
-                  { content: { ...content, items } } as Partial<Block>,
-                  { immediate: true },
-                )
+                onUpdate(block.id, {}, { immediate: true, contentPatch: { items } })
               }
             />
           )}

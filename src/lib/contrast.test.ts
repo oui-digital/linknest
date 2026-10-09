@@ -6,7 +6,7 @@ import {
   WCAG_AA_NORMAL,
 } from "./contrast";
 import { TEMPLATES } from "./templates";
-import { COLOR_PALETTES } from "./templates/theme";
+import { COLOR_PALETTES, featuredLinkStyle } from "./templates/theme";
 import type { ThemeTokens } from "./templates/theme";
 
 describe("parseColor", () => {
@@ -80,4 +80,14 @@ describe("curated color palettes meet WCAG AA for body text", () => {
       });
     }
   }
+});
+
+describe("featured link buttons", () => {
+  it.each(TEMPLATES.map((t) => [t.id, t] as const))(
+    "%s: label meets AA contrast on the primary colour",
+    (_id, template) => {
+      const style = featuredLinkStyle(template.defaultTheme);
+      expect(contrastRatio(style.color, style.backgroundColor)).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+    },
+  );
 });

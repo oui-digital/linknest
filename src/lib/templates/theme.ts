@@ -474,3 +474,18 @@ export function computeBlockResolvedStyle(
 
   return style;
 }
+
+/**
+ * A featured link is the page's main call to action: the theme's primary
+ * colour with a contrasting label, slightly larger. Explicit per-block style
+ * overrides (Pro) are layered on top and still win.
+ */
+export function featuredLinkStyle(theme: ThemeTokens): Record<string, string> {
+  return {
+    backgroundColor: theme.colorPrimary,
+    color: getContrastColor(theme.colorPrimary),
+    borderColor: theme.colorPrimary,
+    fontWeight: "600",
+    padding: "calc(var(--ln-btn-py) * 1.25) var(--ln-btn-px)",
+  };
+}
