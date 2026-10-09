@@ -11,12 +11,11 @@ import { sendMagicLinkEmail } from "@/lib/email";
 import { createAuthAdapter } from "@/lib/auth-adapter";
 import { oauthSignupRedirect } from "@/lib/signup-admission";
 import { getClientIp } from "@/lib/request-ip";
+import { recheckSuspension } from "@/lib/session-suspension";
 
 // Direct Drizzle queries, plus the one-account-per-mailbox checks at every
 // point where an account is created or activated (src/lib/auth-adapter.ts).
 const adapter = createAuthAdapter(db);
-
-const SUSPENSION_RECHECK_MS = 5 * 60 * 1000;
 
 async function isSuspended(where: SQL): Promise<boolean> {
   const [row] = await db
@@ -135,23 +134,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       });
       return refused ?? true;
     },
-    // Sessions are JWTs, so there is no session row to delete on suspension.
-    // Re-check the account periodically instead; returning null clears the
-    // cookie. The timestamp only persists where Auth.js can write cookies
-    // (middleware, route handlers) — elsewhere the check simply re-runs.
+    // Periodic suspension re-check; see src/lib/session-suspension.ts. The
+    // timestamp only persists where Auth.js can write cookies (route
+    // handlers) — elsewhere the check simply re-runs.
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
         token.suspensionCheckedAt = Date.now();
         return token;
       }
-
-      const checkedAt = (token.suspensionCheckedAt as number | undefined) ?? 0;
-      if (token.id && Date.now() - checkedAt > SUSPENSION_RECHECK_MS) {
-        if (await isSuspended(eq(users.id, token.id as string))) return null;
-        token.suspensionCheckedAt = Date.now();
-      }
-      return token;
+      return recheckSuspension(token, {
+        isSuspended: (id) => isSuspended(eq(users.id, id)),
+      });
     },
     session({ session, token }) {
       session.user.id = token.id as string;
