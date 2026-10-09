@@ -18,6 +18,19 @@ export function TemplateMiniPreview({ template }: TemplateMiniPreviewProps) {
     bgStyle.backgroundImage = t.backgroundGradient;
   }
 
+  const radius = Math.min(
+    Number(btnVars["--ln-btn-radius"]?.replace("px", "") ?? t.buttonRadius),
+    6,
+  );
+  const tileStyle: React.CSSProperties = {
+    backgroundColor: btnVars["--ln-btn-bg"] ?? t.colorSurface,
+              borderWidth: btnVars["--ln-btn-border-w"] ?? "0px",
+              borderColor: btnVars["--ln-btn-border-c"] ?? "transparent",
+              borderStyle: "solid",
+              borderRadius: radius,
+              boxShadow: btnVars["--ln-btn-shadow"] === "none" ? undefined : btnVars["--ln-btn-shadow"],
+  };
+
   return (
     <div
       className="flex flex-col items-center overflow-hidden rounded"
@@ -64,28 +77,23 @@ export function TemplateMiniPreview({ template }: TemplateMiniPreviewProps) {
         }}
       />
 
-      {/* Block bars */}
-      <div className="mt-3 flex w-full flex-col items-center gap-1.5">
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="rounded-sm"
-            style={{
-              width: "80%",
-              height: 10,
-              backgroundColor: btnVars["--ln-btn-bg"] ?? t.colorSurface,
-              borderWidth: btnVars["--ln-btn-border-w"] ?? "0px",
-              borderColor: btnVars["--ln-btn-border-c"] ?? "transparent",
-              borderStyle: "solid",
-              borderRadius: Math.min(
-                Number(btnVars["--ln-btn-radius"]?.replace("px", "") ?? t.buttonRadius),
-                6,
-              ),
-              boxShadow: btnVars["--ln-btn-shadow"] === "none" ? undefined : btnVars["--ln-btn-shadow"],
-            }}
-          />
-        ))}
-      </div>
+      {/* Blocks: bars for stack layouts, tiles for the grid layouts */}
+      {template.layout === "card-grid" || template.layout === "bento-grid" ? (
+        <div className="mt-3 grid w-4/5 grid-cols-2 gap-1">
+          {(template.layout === "bento-grid"
+            ? ["col-span-2 h-2.5", "row-span-2 h-[22px]", "h-2.5", "h-2.5"]
+            : ["h-3", "h-3", "h-3", "h-3"]
+          ).map((cls, i) => (
+            <div key={i} className={cls} style={tileStyle} />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 flex w-full flex-col items-center gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ ...tileStyle, width: "80%", height: 10 }} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

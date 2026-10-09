@@ -14,14 +14,16 @@ interface BlockRendererProps {
   /** "preview" = the editor or dashboard preview; interactive blocks render inert. */
   mode?: "public" | "preview";
   resolvedStyle?: React.CSSProperties;
+  /** Grid templates: render links and images as square-ish tiles. */
+  tile?: boolean;
 }
 
-export function BlockRenderer({ block, resolvedStyle }: BlockRendererProps) {
+export function BlockRenderer({ block, resolvedStyle, tile = false }: BlockRendererProps) {
   if (!block.isVisible) return null;
 
   switch (block.type) {
     case "link":
-      return <LinkBlock block={block} resolvedStyle={resolvedStyle} />;
+      return <LinkBlock block={block} resolvedStyle={resolvedStyle} tile={tile} />;
     case "header":
       return <HeaderBlock block={block} />;
     case "text":
@@ -29,7 +31,7 @@ export function BlockRenderer({ block, resolvedStyle }: BlockRendererProps) {
     case "divider":
       return <DividerBlock />;
     case "image":
-      return <ImageBlock block={block} />;
+      return <ImageBlock block={block} tile={tile} />;
     case "socials":
       return <SocialsBlock block={block} />;
     default:

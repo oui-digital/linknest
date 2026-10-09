@@ -10,6 +10,7 @@ import {
 } from "@/lib/templates/theme";
 import { getGoogleFontsUrl } from "@/lib/templates/fonts";
 import { parseBlockContent } from "@/lib/blocks/content";
+import { gridPlacement, isGridLayout } from "@/lib/templates/layout";
 import { BlockRenderer } from "@/components/blocks/block-renderer";
 import { AvatarFallback } from "@/components/ui/avatar-fallback";
 
@@ -215,16 +216,32 @@ export function BlockLayout({
     .filter((block) => block.isVisible)
     .sort((a, b) => a.position - b.position);
 
-  const children = visible.map((block) => (
-    <BlockRenderer
-      key={block.id}
-      block={block}
-      mode={mode}
-      resolvedStyle={resolveBlockStyle(theme, block)}
-    />
-  ));
+  if (isGridLayout(layout)) {
+    return (
+      <div
+        className="grid grid-cols-2 items-stretch"
+        style={{
+          gap: "var(--ln-block-gap)",
+          ...(layout === "bento-grid" ? { gridAutoRows: "minmax(104px, auto)" } : {}),
+        }}
+      >
+        {visible.map((block) => {
+          const placement = gridPlacement(block, layout);
+          return (
+            <div key={block.id} className={`flex min-w-0 ${placement.className}`}>
+              <BlockRenderer
+                block={block}
+                mode={mode}
+                tile={placement.tile}
+                resolvedStyle={resolveBlockStyle(theme, block)}
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
-  // card-grid and bento-grid still stack; real grids come in a later change.
   return (
     <div
       className="flex flex-col"
@@ -235,7 +252,14 @@ export function BlockLayout({
         ["--ln-justify" as string]: layout === "left-aligned" ? "flex-start" : "center",
       } as React.CSSProperties}
     >
-      {children}
+      {visible.map((block) => (
+        <BlockRenderer
+          key={block.id}
+          block={block}
+          mode={mode}
+          resolvedStyle={resolveBlockStyle(theme, block)}
+        />
+      ))}
     </div>
   );
 }
