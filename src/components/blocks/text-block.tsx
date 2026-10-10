@@ -9,8 +9,10 @@ export function TextBlock({ block }: { block: Block }) {
   const text = content.text || block.label || "";
 
   return (
+    // pre-line: the editor field is a multi-line textarea, so its line breaks
+    // are content. Runs of spaces still collapse.
     <p
-      className="w-full"
+      className="w-full whitespace-pre-line wrap-anywhere"
       style={{
         fontFamily: "var(--ln-font-body)",
         fontSize: "var(--ln-font-size-base)",

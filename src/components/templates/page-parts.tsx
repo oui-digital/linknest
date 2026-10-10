@@ -123,8 +123,11 @@ export function PageHeader({ page }: { page: Page }) {
         {page.title}
       </h1>
       {page.bio && (
+        // pre-line keeps the bio textarea's line breaks. wrap-anywhere because
+        // this is a centred flex item: break-words would not stop one long
+        // word or URL from widening it past the page.
         <p
-          className="mt-1 max-w-md"
+          className="mt-1 max-w-md whitespace-pre-line wrap-anywhere"
           style={{ color: "var(--ln-color-text-muted)" }}
         >
           {page.bio}

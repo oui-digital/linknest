@@ -477,8 +477,12 @@ export function computeBlockResolvedStyle(
 
 /**
  * A featured link is the page's main call to action: the theme's primary
- * colour with a contrasting label, slightly larger. Explicit per-block style
- * overrides (Pro) are layered on top and still win.
+ * colour with a contrasting label. Explicit per-block style overrides (Pro)
+ * are layered on top and still win.
+ *
+ * No padding here: LinkBlock sets it per render mode (the taller featured
+ * height included). A padding in this object overrode the card's horizontal
+ * padding, so a featured card's text column was narrower than a plain card's.
  */
 export function featuredLinkStyle(theme: ThemeTokens): Record<string, string> {
   return {
@@ -486,6 +490,5 @@ export function featuredLinkStyle(theme: ThemeTokens): Record<string, string> {
     color: getContrastColor(theme.colorPrimary),
     borderColor: theme.colorPrimary,
     fontWeight: "600",
-    padding: "calc(var(--ln-btn-py) * 1.25) var(--ln-btn-px)",
   };
 }
