@@ -101,6 +101,8 @@ const themeTokensSchema = z
       .optional(),
 
     hideBranding: z.boolean().optional(),
+    // Not plan-gated: every page offers the escape bar unless its owner opts out.
+    hideInAppBrowserPrompt: z.boolean().optional(),
   })
   .strict();
 

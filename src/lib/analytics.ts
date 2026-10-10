@@ -1,5 +1,6 @@
 import { parseBlockContent } from "@/lib/blocks/content";
 import { platformName } from "@/lib/social-platforms";
+import type { InAppApp } from "@/lib/in-app-browser";
 
 /**
  * Pure helpers for the analytics report: date ranges, referrer cleanup, the
@@ -32,6 +33,17 @@ const REFERRER_ALIASES: Record<string, string> = {
   "out.reddit.com": "reddit.com",
   "l.threads.net": "threads.net",
   "com.google.android.gm": "mail.google.com",
+};
+
+/**
+ * Where an in-app view came from when the webview sent no referrer, which
+ * Meta's webviews usually do not. Without this the traffic reads as Direct.
+ */
+export const IN_APP_REFERRER: Record<InAppApp, string> = {
+  instagram: "instagram.com",
+  facebook: "facebook.com",
+  messenger: "messenger.com",
+  threads: "threads.net",
 };
 
 const HOSTNAME_RE = /^(?=.{1,253}$)[a-z0-9-]+(\.[a-z0-9-]+)*$/;

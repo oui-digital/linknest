@@ -3,7 +3,8 @@ import path from "path";
 
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts"],
+    // .tsx tests opt into a DOM with `// @vitest-environment jsdom`.
+    include: ["src/**/*.test.{ts,tsx}"],
   },
   resolve: {
     alias: {

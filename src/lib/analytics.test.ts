@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { IN_APP_APPS } from "./in-app-browser";
 import {
   DAILY_QUERY,
   SOCIAL_DESTINATIONS_QUERY,
@@ -12,6 +13,7 @@ import {
   dayLabels,
   denseSeries,
   mergeTopLinks,
+  IN_APP_REFERRER,
   type BlockRow,
   type PageBlock,
 } from "./analytics";
@@ -155,5 +157,13 @@ describe("analyticsWindow", () => {
       expect(q).not.toContain("INTERVAL");
     }
     expect(DAILY_QUERY).toContain("toTimeZone(timestamp, 'UTC')");
+  });
+});
+
+describe("IN_APP_REFERRER", () => {
+  it("maps every in-app browser to a canonical referrer domain", () => {
+    for (const app of IN_APP_APPS) {
+      expect(canonicalReferrer(IN_APP_REFERRER[app])).toBe(IN_APP_REFERRER[app]);
+    }
   });
 });

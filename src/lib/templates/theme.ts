@@ -52,8 +52,10 @@ export interface ThemeTokens {
   backgroundEffect: "none" | "gradient" | "pattern" | "blur";
   backgroundGradient?: string;
 
-  // Branding
+  // Page-level switches (undefined = default behaviour)
   hideBranding?: boolean;
+  /** Hide the "Open in browser" bar shown inside Instagram/Facebook webviews. */
+  hideInAppBrowserPrompt?: boolean;
 }
 
 /**

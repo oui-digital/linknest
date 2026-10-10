@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+import type { InAppApp } from "@/lib/in-app-browser";
+import { readHandoff, stripHandoff } from "@/lib/in-app-browser";
+import { markPageviewQueued, sendBeacon } from "./beacon";
 
 /**
  * Public-page analytics beacon.
@@ -16,6 +19,13 @@ import { useEffect } from "react";
  * empty for icon-only anchors and includes the description on a card),
  * `data-link-url` (for elements that are not anchors) and `data-link-event`
  * (`embed_play`; everything else is a `link_click`).
+ *
+ * In-app browsers (see src/lib/in-app-browser.ts): `inApp` is set by the
+ * server when it recognised a Meta webview, and `handoffId` when that webview
+ * was offered an escape. A load in the real browser after an escape carries
+ * the `ln_h` marker instead; the collector uses the two to count the visit
+ * once (src/lib/handoff.ts). The marker is removed from the address bar so a
+ * visitor sharing the URL does not pass it on.
  */
 /**
  * Whether a click event is a real activation. A middle click only opens
@@ -35,28 +45,17 @@ export function isTrackableActivation({
   return type === "auxclick" && button === 1 && isAnchor;
 }
 
-export function PageBeacon({ slug }: { slug: string }) {
+export function PageBeacon({
+  slug,
+  inApp,
+  handoffId,
+}: {
+  slug: string;
+  inApp?: InAppApp;
+  handoffId?: string;
+}) {
   useEffect(() => {
-    const send = (payload: Record<string, unknown>) => {
-      const body = JSON.stringify({ slug, ...payload });
-
-      // sendBeacon survives the page unloading, which a plain fetch does not —
-      // it is the difference between counting a click and losing it when the
-      // browser navigates away.
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          "/api/collect",
-          new Blob([body], { type: "application/json" }),
-        );
-        return;
-      }
-      fetch("/api/collect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        keepalive: true,
-      }).catch(() => {});
-    };
+    const send = (payload: Record<string, unknown>) => sendBeacon({ slug, ...payload });
 
     // Only the referring site's hostname, and only when it is another site:
     // the full address can carry personal data in its path or query.
@@ -67,7 +66,23 @@ export function PageBeacon({ slug }: { slug: string }) {
     } catch {
       // No referrer (typed address, app, privacy setting): leave it unset.
     }
-    send({ event: "$pageview", referrer });
+    // A marker means "arrived from an escape" only outside the webview: a
+    // marked link reopened inside Instagram is a fresh in-app visit.
+    const handoff = inApp ? null : readHandoff(location.search);
+    try {
+      const clean = stripHandoff(location.href);
+      if (clean !== location.href) history.replaceState(history.state, "", clean);
+    } catch {
+      // Malformed URL or a locked-down history API: keep the marker.
+    }
+
+    send({
+      event: "$pageview",
+      referrer,
+      ...(inApp ? { inApp, handoffId } : {}),
+      ...(handoff ? { handoff: handoff.app, handoffId: handoff.id } : {}),
+    });
+    markPageviewQueued();
 
     // `click` fires for left-clicks, modifier-clicks (which open a new tab) and
     // keyboard activation; `auxclick` with button 1 is the middle click. A
@@ -106,7 +121,7 @@ export function PageBeacon({ slug }: { slug: string }) {
       document.removeEventListener("click", onActivate);
       document.removeEventListener("auxclick", onActivate);
     };
-  }, [slug]);
+  }, [slug, inApp, handoffId]);
 
   return null;
 }

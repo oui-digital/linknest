@@ -33,7 +33,10 @@ export function PageFrame({
 }: {
   theme: ThemeTokens;
   className?: string;
-  /** Full-width content above the page container (the announcement banner). */
+  /**
+   * Full-width content above the page container: the in-app browser bar and
+   * the announcement banner, in that order.
+   */
   top?: React.ReactNode;
   children: React.ReactNode;
 }) {
