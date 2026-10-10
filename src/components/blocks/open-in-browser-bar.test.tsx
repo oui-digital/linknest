@@ -311,6 +311,26 @@ describe("automatic Android attempt", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  // Regression (QA 2026-10-10): dismissal hid the bar but the queued attempt
+  // still navigated, because returning null does not unmount the component.
+  it("does not navigate when the bar is dismissed while waiting for the page view", async () => {
+    const { navigate } = setup(android);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await act(async () => beacon.resolve());
+    expect(navigate).not.toHaveBeenCalled();
+    expect(events("attempt")).toHaveLength(0);
+  });
+
+  it("does not navigate when the bar is dismissed before the wait cap expires", async () => {
+    vi.useFakeTimers();
+    const { navigate } = setup(android);
+    await act(async () => vi.advanceTimersByTime(AUTO_ESCAPE_WAIT_MS - 1));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await act(async () => vi.advanceTimersByTime(AUTO_ESCAPE_WAIT_MS));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(events("attempt")).toHaveLength(0);
+  });
+
   it("never runs unless enabled, nor in the editor preview", async () => {
     const off = setup({ ...android, autoAttempt: false });
     await act(async () => beacon.resolve());

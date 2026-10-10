@@ -80,6 +80,9 @@ export function OpenInBrowserBar({
     () => false,
   );
   const [dismissed, setDismissed] = useState(false);
+  // Read by the queued automatic attempt, which outlives the render that
+  // dismissed the bar: returning null does not unmount, so no cleanup runs.
+  const dismissedRef = useRef(false);
   const [phase, setPhase] = useState<Phase>(primary ? "prompt" : "instructions");
   const [copy, setCopy] = useState<"idle" | "copied" | "manual">("idle");
   const manualRef = useRef<HTMLInputElement>(null);
@@ -172,7 +175,8 @@ export function OpenInBrowserBar({
     // Let PageBeacon queue the webview's page view first. Only ordering:
     // counting never depends on it (src/lib/handoff.ts).
     void Promise.race([pageviewQueued, cap]).then(() => {
-      if (run.cancelled || pending.current) return;
+      // Dismissing while the attempt waits is a "no": never navigate after it.
+      if (run.cancelled || dismissedRef.current || pending.current) return;
       track("attempt", primary.method);
       arm(primary.method);
       navigate(primary.url);
@@ -234,6 +238,8 @@ export function OpenInBrowserBar({
   };
 
   const onDismiss = () => {
+    dismissedRef.current = true;
+    if (auto.current) auto.current.cancelled = true;
     clearTimeout(pending.current?.timer);
     pending.current = null;
     setDismissed(true);
