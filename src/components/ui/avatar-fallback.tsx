@@ -15,6 +15,9 @@ export function AvatarFallback({
 }: AvatarFallbackProps) {
   const sizeStyle = { width: size, height: size };
 
+  // Decorative on purpose: PageHeader renders the page title as the h1 right
+  // below the avatar, so alt="" stops screen readers reading the name twice.
+  // If the avatar is ever shown without that title next to it, give it an alt.
   if (avatarUrl) {
     return (
       <div

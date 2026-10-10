@@ -90,4 +90,11 @@ describe("featured link buttons", () => {
       expect(contrastRatio(style.color, style.backgroundColor)).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
     },
   );
+
+  it("leaves padding to the link block", () => {
+    // Its padding used to override the card's, which squeezed a featured
+    // card's text column narrower than a plain card's.
+    const style = featuredLinkStyle(TEMPLATES[0].defaultTheme);
+    expect(style).not.toHaveProperty("padding");
+  });
 });
