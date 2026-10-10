@@ -1,16 +1,7 @@
 // src/lib/rate-limit.ts — Rate limiting via Upstash Redis + Ratelimit
 
 import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
-
-// Only create Redis client if env vars are set (skip in development if not configured)
-const redis =
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
-      })
-    : null;
+import { redis } from "@/lib/redis";
 
 /**
  * Auth rate limiter: 5 requests per minute per identifier.

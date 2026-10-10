@@ -14,6 +14,28 @@ vi.mock("posthog-node", () => ({
     flush = posthog.flush;
   },
 }));
+const handoff = vi.hoisted(() => ({
+  consumeHandoff: vi.fn(),
+  registerHandoff: vi.fn(),
+}));
+vi.mock("@/lib/handoff", () => ({
+  handoffStore: {},
+  consumeHandoff: handoff.consumeHandoff,
+  registerHandoff: handoff.registerHandoff,
+}));
+// The real acknowledgement is tested against the real SDK in
+// posthog-delivery.test.ts; here it is a switch.
+const delivery = vi.hoisted(() => ({ ack: true }));
+vi.mock("@/lib/posthog-delivery", () => ({
+  trackedFetch: vi.fn(),
+  sendWithAck: async (
+    client: { captureImmediate: (m: unknown) => Promise<void> },
+    message: unknown,
+  ) => {
+    await client.captureImmediate(message);
+    return delivery.ack;
+  },
+}));
 vi.mock("@/lib/request-ip", () => ({ getClientIp: async () => "203.0.113.7" }));
 vi.mock("@/lib/rate-limit", () => ({
   mutationRateLimit: null,
@@ -22,6 +44,7 @@ vi.mock("@/lib/rate-limit", () => ({
 
 import { POST } from "./route";
 import { SITE_URL } from "@/lib/site";
+import { IN_APP_UAS } from "@/lib/in-app-browser.fixtures";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
@@ -44,6 +67,9 @@ beforeEach(() => {
   posthog.captureImmediate.mockReset().mockResolvedValue(undefined);
   posthog.capture.mockReset();
   posthog.flush.mockReset().mockResolvedValue(undefined);
+  handoff.consumeHandoff.mockReset().mockResolvedValue(false);
+  handoff.registerHandoff.mockReset().mockResolvedValue(undefined);
+  delivery.ack = true;
 });
 
 describe("POST /api/collect", () => {
@@ -166,5 +192,119 @@ describe("referring domain", () => {
     await beacon({ event: "link_click", slug: "jordan", referrer: "example.com" });
     const props = posthog.captureImmediate.mock.calls[0][0].properties;
     expect(props).not.toHaveProperty("$referring_domain");
+  });
+});
+
+describe("in-app browsers", () => {
+  const ID = "0123456789abcdef";
+  const lastCall = () => posthog.captureImmediate.mock.calls.at(-1)![0];
+
+  it("does not mistake Meta in-app browsers for bots", async () => {
+    for (const [name, ua] of Object.entries(IN_APP_UAS)) {
+      posthog.captureImmediate.mockClear();
+      await beacon({ event: "$pageview", slug: "jordan" }, ua);
+      expect(posthog.captureImmediate, name).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("attributes an in-app view with no referrer to the app and registers its credit after delivery", async () => {
+    await beacon({ event: "$pageview", slug: "Jordan", inApp: "instagram", handoffId: ID });
+    expect(lastCall()).toMatchObject({
+      event: "$pageview",
+      properties: { in_app: "instagram", handoff_id: ID, $referring_domain: "instagram.com" },
+    });
+    expect(handoff.registerHandoff).toHaveBeenCalledWith({}, "jordan", ID);
+    expect(posthog.captureImmediate.mock.invocationCallOrder[0]).toBeLessThan(
+      handoff.registerHandoff.mock.invocationCallOrder[0]!,
+    );
+    expect(handoff.consumeHandoff).not.toHaveBeenCalled();
+  });
+
+  it("creates no credit when PostHog did not acknowledge the source view", async () => {
+    delivery.ack = false;
+    await beacon({ event: "$pageview", slug: "jordan", inApp: "instagram", handoffId: ID });
+    expect(posthog.captureImmediate).toHaveBeenCalledTimes(1);
+    expect(handoff.registerHandoff).not.toHaveBeenCalled();
+  });
+
+  it("keeps a real referrer over the app fallback", async () => {
+    await beacon({ event: "$pageview", slug: "jordan", inApp: "facebook", referrer: "l.facebook.com" });
+    expect(lastCall().properties.$referring_domain).toBe("facebook.com");
+    await beacon({ event: "$pageview", slug: "jordan", inApp: "threads", referrer: "news.example" });
+    expect(lastCall().properties.$referring_domain).toBe("news.example");
+  });
+
+  it("records an arrival that spends a credit as page_handoff, deciding before capture", async () => {
+    handoff.consumeHandoff.mockResolvedValue(true);
+    await beacon({ event: "$pageview", slug: "jordan", handoff: "instagram", handoffId: ID });
+    expect(handoff.consumeHandoff).toHaveBeenCalledWith({}, "jordan", ID);
+    expect(handoff.consumeHandoff.mock.invocationCallOrder[0]).toBeLessThan(
+      posthog.captureImmediate.mock.invocationCallOrder[0]!,
+    );
+    expect(lastCall()).toMatchObject({
+      event: "page_handoff",
+      properties: { in_app_handoff: "instagram", handoff_id: ID },
+    });
+    expect(handoff.registerHandoff).not.toHaveBeenCalled();
+  });
+
+  it("counts an arrival without a credit as a view attributed to the app", async () => {
+    await beacon({ event: "$pageview", slug: "jordan", handoff: "instagram", handoffId: ID });
+    expect(lastCall()).toMatchObject({
+      event: "$pageview",
+      properties: { in_app_handoff: "instagram", handoff_id: ID, $referring_domain: "instagram.com" },
+    });
+  });
+
+  it("treats a malformed handoff id as a plain counted view", async () => {
+    await beacon({ event: "$pageview", slug: "jordan", handoff: "instagram", handoffId: "nope" });
+    await beacon({ event: "$pageview", slug: "jordan", inApp: "instagram", handoffId: "nope" });
+    expect(handoff.consumeHandoff).not.toHaveBeenCalled();
+    expect(handoff.registerHandoff).not.toHaveBeenCalled();
+    for (const [call] of posthog.captureImmediate.mock.calls) {
+      expect(call.event).toBe("$pageview");
+      expect(call.properties).not.toHaveProperty("handoff_id");
+    }
+  });
+
+  it("ignores a handoff marker on a view the server saw in-app", async () => {
+    await beacon({ event: "$pageview", slug: "jordan", inApp: "instagram", handoff: "facebook", handoffId: ID });
+    expect(handoff.consumeHandoff).not.toHaveBeenCalled();
+    expect(lastCall().properties).not.toHaveProperty("in_app_handoff");
+  });
+
+  it("forwards escape events and rejects unknown values", async () => {
+    await beacon({
+      event: "inapp_escape",
+      slug: "jordan",
+      inApp: "instagram",
+      platform: "ios",
+      method: "ig_extbrowser",
+      outcome: "attempt",
+    });
+    expect(lastCall()).toMatchObject({
+      event: "inapp_escape",
+      properties: {
+        in_app: "instagram",
+        in_app_platform: "ios",
+        escape_method: "ig_extbrowser",
+        escape_outcome: "attempt",
+      },
+    });
+    expect(lastCall().properties).not.toHaveProperty("$referring_domain");
+
+    posthog.captureImmediate.mockClear();
+    await beacon({ event: "inapp_escape", slug: "jordan", inApp: "tiktok", method: "intent" });
+    await beacon({ event: "inapp_escape", slug: "jordan", inApp: "instagram", method: "ftp" });
+    await beacon({ event: "page_handoff", slug: "jordan" });
+    expect(posthog.captureImmediate).not.toHaveBeenCalled();
+  });
+
+  it("never attaches in-app properties to link clicks", async () => {
+    await beacon({ event: "link_click", slug: "jordan", inApp: "instagram", handoffId: ID, handoff: "instagram" });
+    const props = lastCall().properties;
+    expect(props).not.toHaveProperty("in_app");
+    expect(props).not.toHaveProperty("in_app_handoff");
+    expect(props).not.toHaveProperty("handoff_id");
   });
 });
