@@ -337,6 +337,28 @@ export function PageSettings({
         </div>
       </section>
 
+      {/* Visitors — every plan */}
+      <section>
+        <h3 className="mb-3 text-sm font-semibold">Visitors</h3>
+        <label className="flex items-center justify-between gap-3">
+          <div>
+            <span className="text-sm">
+              Help visitors leave the Instagram and Facebook in-app browser
+            </span>
+            <p className="text-xs text-gray-400">
+              Shows a small &quot;Open in browser&quot; bar when your page is opened inside
+              Instagram, Facebook, Messenger or Threads
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={!theme.hideInAppBrowserPrompt}
+            onChange={(e) => onThemeChange({ hideInAppBrowserPrompt: !e.target.checked })}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+        </label>
+      </section>
+
       {/* Branding */}
       {plan === "pro" && (
         <section>
