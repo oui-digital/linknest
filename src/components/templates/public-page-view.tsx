@@ -4,6 +4,8 @@ import type { ThemeTokens } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { getContrastColor } from "@/lib/contrast";
 import { StickyBanner } from "@/components/blocks/sticky-banner";
+import { OpenInBrowserBar } from "@/components/blocks/open-in-browser-bar";
+import type { InAppEscape } from "@/lib/in-app-browser";
 import {
   BlockRuntimeProvider,
   type BlockRuntime,
@@ -36,6 +38,7 @@ export function PublicPageView({
   showBadge,
   showReport,
   runtime,
+  inApp,
   frameClassName,
 }: {
   page: Page;
@@ -46,6 +49,11 @@ export function PublicPageView({
   showBadge: boolean;
   showReport: boolean;
   runtime?: Omit<BlockRuntime, "mode" | "pageId" | "pageTitle" | "cta">;
+  /**
+   * Set by the public route when a Meta in-app browser requested the page.
+   * The dashboard preview and the editor never pass it.
+   */
+  inApp?: InAppEscape;
   frameClassName?: string;
 }) {
   const layout = getTemplate(page.templateId).layout;
@@ -67,12 +75,17 @@ export function PublicPageView({
         theme={theme}
         className={frameClassName}
         top={
-          page.banner ? (
-            <StickyBanner
-              banner={page.banner}
-              background={theme.colorPrimary}
-              foreground={getContrastColor(theme.colorPrimary)}
-            />
+          inApp || page.banner ? (
+            <>
+              {inApp && <OpenInBrowserBar escape={inApp} slug={page.slug} />}
+              {page.banner && (
+                <StickyBanner
+                  banner={page.banner}
+                  background={theme.colorPrimary}
+                  foreground={getContrastColor(theme.colorPrimary)}
+                />
+              )}
+            </>
           ) : null
         }
       >

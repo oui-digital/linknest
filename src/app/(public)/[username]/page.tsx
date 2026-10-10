@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { unstable_cache } from "next/cache";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
@@ -23,9 +24,17 @@ import { isInIndexProbation } from "@/lib/indexing";
 import { getTurnstileClientConfig } from "@/lib/turnstile";
 import { countConfirmed } from "@/lib/subscribers";
 import { getLimit, type PlanId } from "@/lib/entitlements";
+import {
+  detectInAppBrowser,
+  escapeTargetUrl,
+  newHandoffId,
+  parseDisabledMethods,
+  planInAppEscape,
+} from "@/lib/in-app-browser";
 
 interface Props {
   params: Promise<{ username: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 // NOTE: `export const revalidate = false` used to sit here. It was a no-op —
@@ -37,6 +46,11 @@ interface Props {
 //
 // Caching is therefore done at the data layer, which works regardless of how
 // the route itself is rendered, and is invalidated by tag on publish/edit.
+//
+// The in-app browser bar depends on the request's User-Agent, so it is decided
+// in the page component, never inside these cached loaders. If a CDN cache is
+// ever put in front of this route, it must Vary on User-Agent (or the
+// detection must move to the client).
 async function getPageData(slug: string) {
   const normalized = normalizeSlug(slug);
 
@@ -136,7 +150,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function PublicPage({ params }: Props) {
+export default async function PublicPage({ params, searchParams }: Props) {
   const { username } = await params;
   const result = await getPageData(username);
 
@@ -162,6 +176,26 @@ export default async function PublicPage({ params }: Props) {
       }
     : undefined;
 
+  // Meta in-app browsers (Instagram, Facebook, Messenger, Threads). Detection
+  // feeds analytics whatever the owner chose; the toggle and the kill switch
+  // only decide whether the escape bar is offered. A handoff id is issued only
+  // with the bar, since only its links can carry one (src/lib/handoff.ts).
+  const detected = detectInAppBrowser((await headers()).get("user-agent"));
+  const disabled = parseDisabledMethods(process.env.INAPP_ESCAPE_DISABLED);
+  const promptEnabled = detected !== null && !theme?.hideInAppBrowserPrompt && disabled !== "all";
+  const handoffId = promptEnabled ? newHandoffId() : undefined;
+  const inApp =
+    detected && promptEnabled
+      ? planInAppEscape(
+          detected,
+          escapeTargetUrl(SITE_URL, page.slug, await searchParams, detected.app, handoffId),
+          {
+            disabled,
+            autoAttempt: process.env.INAPP_AUTO_ESCAPE_ANDROID === "1",
+          },
+        )
+      : null;
+
   return (
     <>
       <TemplateRenderer
@@ -170,8 +204,13 @@ export default async function PublicPage({ params }: Props) {
         showBadge={showBadge}
         showReport
         runtime={runtime}
+        inApp={inApp ?? undefined}
       />
-      <PageBeacon slug={page.slug} />
+      <PageBeacon
+        slug={page.slug}
+        inApp={detected?.app}
+        handoffId={inApp ? handoffId : undefined}
+      />
     </>
   );
 }

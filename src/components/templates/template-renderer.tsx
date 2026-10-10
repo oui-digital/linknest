@@ -5,6 +5,7 @@ import { getTemplate } from "@/lib/templates";
 import { PublicPageView } from "./public-page-view";
 import type { RenderMode } from "./page-parts";
 import type { BlockRuntime } from "@/components/blocks/block-runtime";
+import type { InAppEscape } from "@/lib/in-app-browser";
 
 type Page = InferSelectModel<typeof pages>;
 type Block = InferSelectModel<typeof blocksSchema>;
@@ -18,6 +19,8 @@ interface TemplateRendererProps {
   mode?: RenderMode;
   /** Server-computed values for interactive blocks (Turnstile, list state). */
   runtime?: Omit<BlockRuntime, "mode" | "pageId" | "pageTitle" | "cta">;
+  /** Server-detected Meta in-app browser; the public route only. */
+  inApp?: InAppEscape;
 }
 
 /** Server entry point: the public page and the dashboard preview route. */
@@ -28,6 +31,7 @@ export function TemplateRenderer({
   showReport = false,
   mode = "public",
   runtime,
+  inApp,
 }: TemplateRendererProps) {
   const template = getTemplate(page.templateId);
   const theme = {
@@ -44,6 +48,7 @@ export function TemplateRenderer({
       showBadge={showBadge}
       showReport={showReport}
       runtime={runtime}
+      inApp={inApp}
     />
   );
 }
