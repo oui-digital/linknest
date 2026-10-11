@@ -11,7 +11,7 @@ interface ImageUploadProps {
   /** Avatars are round; block images keep their aspect ratio. */
   shape?: "circle" | "rect";
   /** Server-side processing preset (see src/lib/image-processing.ts). */
-  uploadType?: "avatar" | "thumbnail";
+  uploadType?: "avatar" | "thumbnail" | "og" | "favicon";
 }
 
 export function ImageUpload({

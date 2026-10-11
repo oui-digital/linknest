@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Serif_Display, DM_Sans } from "next/font/google";
-import "./globals.css";
+import "../globals.css";
 
 // preload: false — these two faces were being preloaded at high priority on
 // EVERY route, including public link pages, which render entirely in the fonts
@@ -24,11 +24,20 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
+  // The icon used to be the app/icon.svg file convention, which applied to
+  // every route and would have overridden a page's own favicon; it is a
+  // static file now and each root layout declares it.
+  icons: { icon: "/icon.svg" },
   title: "LinkNest — Your Links Deserve a Home",
   description:
     "The link-in-bio tool that makes you look professional in seconds. Gorgeous templates, brand-level customization, and blazing performance.",
 };
 
+/**
+ * Root layout for the site: marketing, auth, dashboard, legal, report and
+ * subscribe pages. Public pages have their own root layout under
+ * (public)/[username] so that <html lang> can follow the page's language.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{

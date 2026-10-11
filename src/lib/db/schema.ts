@@ -144,6 +144,16 @@ export const pages = pgTable(
     theme: jsonb("theme").default({}).notNull(),
     seoTitle: varchar("seo_title", { length: 70 }),
     seoDescription: varchar("seo_description", { length: 160 }),
+    // BCP-47 code from src/lib/languages.ts; becomes <html lang> on the page.
+    language: varchar("language", { length: 16 }).default("en").notNull(),
+    // Alternative text for the avatar image; the title when empty.
+    avatarAlt: varchar("avatar_alt", { length: 255 }),
+    // "person" | "organization": the schema.org type of the page's subject.
+    entityKind: varchar("entity_kind", { length: 16 }).default("person").notNull(),
+    // Own R2 assets only (isOwnAssetUrl); null falls back to the generated
+    // card and the LinkNest icon.
+    ogImageUrl: text("og_image_url"),
+    faviconUrl: text("favicon_url"),
     // Validated by bannerSchema (src/lib/banner.ts). Its link is scanned like
     // a block link: saved through applyLiveEdit and included in publish scans.
     banner: jsonb("banner").$type<PageBanner | null>(),

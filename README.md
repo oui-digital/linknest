@@ -53,6 +53,23 @@ canonical `/@slug`. Build in-app links with `getPublicPageUrl()` from
 (lowercased, trimmed) — always write `normalizeSlug()` output, never raw input,
 because lookups are case-sensitive.
 
+**Root layouts.** There are two: `src/app/(main)/layout.tsx` for the site
+(marketing, auth, dashboard, legal, report, subscribe) and
+`src/app/(public)/[username]/layout.tsx` for public pages, which sets
+`<html lang>` (and `dir`) from `pages.language`. With no top-level layout,
+`src/app/global-not-found.tsx` (enabled by `experimental.globalNotFound`)
+answers URLs that match no route; each root has its own `not-found.tsx` and
+`error.tsx` built from `src/components/route-fallbacks.tsx`.
+
+**Page settings.** `pages.language` (BCP-47, closed list in
+`src/lib/languages.ts`), `avatar_alt`, `entity_kind` (Person/Organization in
+the JSON-LD), `og_image_url` and `favicon_url` (own R2 assets only, validated
+by `updatePageSchema` in `src/lib/page-schema.ts`). The social card is served
+by `/@slug/og` from `src/lib/og-card.tsx` so a custom `og:image` can override
+it. Page creation and duplication go through `insertPageInWorkspace`
+(`src/lib/page-create.ts`), which enforces the page limit under the workspace
+lock; `duplicatePageCore` documents what a copy does and does not carry.
+
 **Caching.** The public route renders dynamically, so `revalidatePath` does not
 apply to it. Page data is cached at the data layer with `unstable_cache` and
 invalidated by tag; call `updateTag(publicPageTag(slug))` after any mutation
