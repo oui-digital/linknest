@@ -154,6 +154,26 @@ export const SOCIAL_DESTINATIONS_QUERY = `
   ORDER BY clicks DESC
   LIMIT 500`;
 
+/**
+ * Counts for every block the editor lists. TOP_BLOCKS_QUERY ranks and cuts at
+ * 25, so a block missing from it may still have clicks; this one is keyed by
+ * the page's current block ids and bounded only by the block limit (100), so
+ * an absent id really means zero. The LIMIT is explicit because the query
+ * endpoint otherwise applies its own default.
+ */
+export const BLOCK_COUNTS_QUERY = `
+  SELECT properties.block_id AS block_id,
+         countIf(event = 'link_click') AS clicks,
+         countIf(event = 'embed_play') AS plays
+  FROM events
+  WHERE event IN ('link_click', 'embed_play')
+    AND properties.$current_url IN {urls}
+    AND properties.block_id IN {blockIds}
+    AND timestamp >= toDateTime({start}, 'UTC')
+    AND timestamp <= toDateTime({end}, 'UTC')
+  GROUP BY block_id
+  LIMIT 1000`;
+
 export const TOP_SOURCES_QUERY = `
   SELECT coalesce(properties.$referring_domain, '') AS source, count() AS views
   FROM events
@@ -258,4 +278,25 @@ export function mergeTopLinks(
 /** Total link clicks ÷ page views. Can exceed 1: one visitor may click many links. */
 export function clicksPerView(clicks: number, views: number): number | null {
   return views > 0 ? clicks / views : null;
+}
+
+// ─── Per-block counts for the editor ────────────────────────────────────────
+
+export type BlockCount = { clicks: number; plays: number };
+export type BlockCounts = Record<string, BlockCount>;
+
+/**
+ * One entry per requested block id, zero-filled, so the editor can tell "no
+ * clicks" from "no data"; rows for ids the page no longer has are dropped.
+ */
+export function blockCounts(
+  rows: { blockId: string; clicks: number; plays: number }[],
+  blockIds: string[],
+): BlockCounts {
+  const counts: BlockCounts = {};
+  for (const id of blockIds) counts[id] = { clicks: 0, plays: 0 };
+  for (const row of rows) {
+    if (row.blockId in counts) counts[row.blockId] = { clicks: row.clicks, plays: row.plays };
+  }
+  return counts;
 }

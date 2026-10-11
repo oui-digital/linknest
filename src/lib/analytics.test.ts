@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { IN_APP_APPS } from "./in-app-browser";
 import {
+  BLOCK_COUNTS_QUERY,
   DAILY_QUERY,
   SOCIAL_DESTINATIONS_QUERY,
   TOP_BLOCKS_QUERY,
@@ -13,6 +14,7 @@ import {
   dayLabels,
   denseSeries,
   mergeTopLinks,
+  blockCounts,
   IN_APP_REFERRER,
   type BlockRow,
   type PageBlock,
@@ -165,5 +167,31 @@ describe("IN_APP_REFERRER", () => {
     for (const app of IN_APP_APPS) {
       expect(canonicalReferrer(IN_APP_REFERRER[app])).toBe(IN_APP_REFERRER[app]);
     }
+  });
+});
+
+describe("per-block counts for the editor", () => {
+  it("asks for the page's own block ids with a bound above the block limit", () => {
+    expect(BLOCK_COUNTS_QUERY).toContain("properties.block_id IN {blockIds}");
+    expect(BLOCK_COUNTS_QUERY).toContain("$current_url IN {urls}");
+    const limit = Number(BLOCK_COUNTS_QUERY.match(/LIMIT (\d+)/)?.[1]);
+    expect(limit).toBeGreaterThanOrEqual(1000);
+    expect(BLOCK_COUNTS_QUERY).not.toContain("ORDER BY");
+  });
+
+  it("zero-fills every requested id and ignores rows for unknown ids", () => {
+    const counts = blockCounts(
+      [
+        { blockId: "a", clicks: 3, plays: 0 },
+        { blockId: "gone", clicks: 9, plays: 9 },
+        { blockId: "c", clicks: 0, plays: 2 },
+      ],
+      ["a", "b", "c"],
+    );
+    expect(counts).toEqual({
+      a: { clicks: 3, plays: 0 },
+      b: { clicks: 0, plays: 0 },
+      c: { clicks: 0, plays: 2 },
+    });
   });
 });

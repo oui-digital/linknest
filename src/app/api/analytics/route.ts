@@ -8,6 +8,7 @@ import { getLimit, type PlanId } from "@/lib/entitlements";
 import { normalizeSlug } from "@/lib/slugs";
 import { publicPageUrlVariants } from "@/lib/site";
 import {
+  BLOCK_COUNTS_QUERY,
   DAILY_QUERY,
   SOCIAL_DESTINATIONS_QUERY,
   TOP_BLOCKS_QUERY,
@@ -18,18 +19,29 @@ import {
   dayLabels,
   denseSeries,
   mergeTopLinks,
+  blockCounts,
+  type BlockCounts,
   type BlockRow,
   type DestinationRow,
   type TopLink,
 } from "@/lib/analytics";
 
 /**
- * GET /api/analytics?slug=<page-slug>&days=7|30|90&view=summary|full
+ * GET /api/analytics?slug=<page-slug>&days=7|30|90&view=summary|full|blocks
  *
  * Views and link clicks for one page from PostHog. `days` is capped by the
  * plan (7 days free, 90 days Pro). `view=full` adds the top links and top
  * referring domains; the dashboard cards ask for the summary only.
+ * `view=blocks` returns clicks and plays for every current block of the page
+ * (BlockCountsResponse), for the editor's per-block chips.
  */
+export type BlockCountsResponse = {
+  days: number;
+  maxDays: number;
+  configured: boolean;
+  blocks: BlockCounts;
+  error?: string;
+};
 export type AnalyticsResponse = {
   days: number;
   maxDays: number;
@@ -71,7 +83,8 @@ export async function GET(request: NextRequest) {
 
   const maxDays = getLimit(workspace.plan as PlanId, "analytics_days");
   const days = clampDays(Number(params.get("days")) || null, maxDays);
-  const full = params.get("view") === "full";
+  const view = params.get("view");
+  const full = view === "full";
   const window = analyticsWindow(days);
   const keys = window.keys;
   const labels = dayLabels(keys);
@@ -89,6 +102,9 @@ export async function GET(request: NextRequest) {
       "[analytics] POSTHOG_PERSONAL_API_KEY / POSTHOG_PROJECT_ID are not set — " +
         "analytics is returning empty data for every user.",
     );
+    if (view === "blocks") {
+      return jsonCounts({ days, maxDays, configured: false, blocks: {} });
+    }
     const zeros = Array(days).fill(0);
     return json({
       ...base,
@@ -134,6 +150,30 @@ export async function GET(request: NextRequest) {
     }
     const body = (await res.json()) as { results?: Row[] };
     return body.results ?? [];
+  }
+
+  if (view === "blocks") {
+    const ids = (
+      await db.select({ id: blocks.id }).from(blocks).where(eq(blocks.pageId, page.id))
+    ).map((b) => b.id);
+    try {
+      const rows = ids.length
+        ? (await hogql<[string, number, number]>(BLOCK_COUNTS_QUERY, { blockIds: ids })).map(
+            ([blockId, clicks, plays]) => ({
+              blockId: String(blockId),
+              clicks: Number(clicks),
+              plays: Number(plays),
+            }),
+          )
+        : [];
+      return jsonCounts({ days, maxDays, configured: true, blocks: blockCounts(rows, ids) });
+    } catch (error) {
+      console.error("[analytics] PostHog block counts failed:", error);
+      return jsonCounts(
+        { days, maxDays, configured: true, blocks: {}, error: "Analytics are temporarily unavailable." },
+        502,
+      );
+    }
   }
 
   const daily = async (event: string) =>
@@ -227,6 +267,13 @@ export async function GET(request: NextRequest) {
       502,
     );
   }
+}
+
+function jsonCounts(body: BlockCountsResponse, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "private, max-age=60" },
+  });
 }
 
 function json(body: AnalyticsResponse, status = 200) {

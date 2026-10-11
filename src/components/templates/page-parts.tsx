@@ -269,6 +269,7 @@ export function BlockLayout({
             <div
               key={block.id}
               className={`flex min-w-0 ${placement.className}${block.isVisible ? "" : ` ${HIDDEN_PREVIEW_CLASS}`}`}
+              {...(mode === "preview" ? { "data-block-id": block.id } : {})}
             >
               {!block.isVisible && <HiddenTag />}
               <BlockRenderer
@@ -295,24 +296,30 @@ export function BlockLayout({
       } as React.CSSProperties}
     >
       {visible.map((block) =>
-        block.isVisible ? (
-          <BlockRenderer
+        mode === "preview" ? (
+          // Preview only: a wrapper the editor can scroll to (data-block-id),
+          // dimmed and tagged when the block is hidden. Public markup gets no
+          // wrapper: a renderer that returns null (a link without a URL) would
+          // otherwise leave an empty flex item and a gap.
+          <div
             key={block.id}
-            block={block}
-            mode={mode}
-            resolvedStyle={resolveBlockStyle(theme, block)}
-          />
-        ) : (
-          // Preview only: public markup gets no wrapper (a renderer that
-          // returns null would otherwise leave an empty flex item and a gap).
-          <div key={block.id} className={`w-full ${HIDDEN_PREVIEW_CLASS}`}>
-            <HiddenTag />
+            data-block-id={block.id}
+            className={block.isVisible ? "w-full" : `w-full ${HIDDEN_PREVIEW_CLASS}`}
+          >
+            {!block.isVisible && <HiddenTag />}
             <BlockRenderer
               block={block}
               mode={mode}
               resolvedStyle={resolveBlockStyle(theme, block)}
             />
           </div>
+        ) : (
+          <BlockRenderer
+            key={block.id}
+            block={block}
+            mode={mode}
+            resolvedStyle={resolveBlockStyle(theme, block)}
+          />
         ),
       )}
     </div>

@@ -13,12 +13,14 @@ interface MobilePreviewOverlayProps {
   page: Page;
   blocks: Block[];
   theme: ThemeTokens;
+  activeBlockId?: string | null;
 }
 
 export function MobilePreviewOverlay({
   page,
   blocks,
   theme,
+  activeBlockId,
 }: MobilePreviewOverlayProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -62,7 +64,7 @@ export function MobilePreviewOverlay({
           {/* Preview body */}
           <div className="flex-1 overflow-auto bg-gray-100 px-4 py-6">
             <div className="mx-auto" style={{ transform: "scale(0.85)", transformOrigin: "top" }}>
-              <LivePreview page={page} blocks={blocks} theme={theme} />
+              <LivePreview page={page} blocks={blocks} theme={theme} activeBlockId={activeBlockId} />
             </div>
           </div>
         </div>
