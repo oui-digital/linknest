@@ -2,7 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import type { blocks } from "@/lib/db/schema";
 import { parseBlockContent } from "@/lib/blocks/content";
 import { platformName } from "@/lib/social-platforms";
-import { USER_LINK_REL, isExternalPage } from "@/lib/link-rel";
+import { IDENTITY_LINK_REL, isExternalPage } from "@/lib/link-rel";
 import { SOCIAL_ICONS } from "./social-icons";
 
 type Block = InferSelectModel<typeof blocks>;
@@ -29,9 +29,10 @@ export function SocialsBlock({ block }: { block: Block }) {
         const external = isExternalPage(item.url);
         return (
           <li key={item.url}>
+            {/* The page's own profiles: the one place rel="me" belongs. */}
             <a
               href={item.url}
-              {...(external ? { target: "_blank", rel: USER_LINK_REL } : {})}
+              {...(external ? { target: "_blank", rel: IDENTITY_LINK_REL } : {})}
               aria-label={name}
               title={name}
               data-link-id={block.id}

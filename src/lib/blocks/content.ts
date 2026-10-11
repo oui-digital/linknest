@@ -59,7 +59,13 @@ const linkShape = {
   featured: z.boolean().optional(),
 };
 const headerShape = {};
-const textShape = { text: z.string().max(5000).optional() };
+// `quote` renders as <blockquote> (a testimonial), `paragraph` or absent as <p>.
+export const TEXT_VARIANTS = ["paragraph", "quote"] as const;
+export type TextVariant = (typeof TEXT_VARIANTS)[number];
+const textShape = {
+  text: z.string().max(5000).optional(),
+  variant: z.enum(TEXT_VARIANTS).optional(),
+};
 const dividerShape = {};
 const imageShape = {
   ...sizeField,

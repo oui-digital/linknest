@@ -8,18 +8,34 @@ export function TextBlock({ block }: { block: Block }) {
   const content = parseBlockContent("text", block.content);
   const text = content.text || block.label || "";
 
+  const style: React.CSSProperties = {
+    fontFamily: "var(--ln-font-body)",
+    fontSize: "var(--ln-font-size-base)",
+    color: "var(--ln-color-text-muted)",
+    lineHeight: "var(--ln-line-height-body)",
+  };
+
+  // A testimonial is a quotation, so it gets the element that says so.
+  // Logical properties: the rule sits on the start side in RTL pages too.
+  if (content.variant === "quote") {
+    return (
+      <blockquote
+        className="w-full whitespace-pre-line wrap-anywhere italic"
+        style={{
+          ...style,
+          borderInlineStart: "3px solid var(--ln-color-accent)",
+          paddingInlineStart: "calc(var(--ln-btn-px) * 0.75)",
+        }}
+      >
+        {text}
+      </blockquote>
+    );
+  }
+
   return (
     // pre-line: the editor field is a multi-line textarea, so its line breaks
     // are content. Runs of spaces still collapse.
-    <p
-      className="w-full whitespace-pre-line wrap-anywhere"
-      style={{
-        fontFamily: "var(--ln-font-body)",
-        fontSize: "var(--ln-font-size-base)",
-        color: "var(--ln-color-text-muted)",
-        lineHeight: "var(--ln-line-height-body)",
-      }}
-    >
+    <p className="w-full whitespace-pre-line wrap-anywhere" style={style}>
       {text}
     </p>
   );

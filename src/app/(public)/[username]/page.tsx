@@ -1,25 +1,14 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
-import { unstable_cache } from "next/cache";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import {
-  pages,
-  blocks,
-  workspaces,
-  entitlementOverrides,
-} from "@/lib/db/schema";
-import { eq, and, asc } from "drizzle-orm";
 import { TemplateRenderer } from "@/components/templates/template-renderer";
 import { PageBeacon } from "@/components/analytics/page-beacon";
 import type { ThemeTokens } from "@/lib/templates/theme";
-import { getPublicPageUrl, normalizeSlug } from "@/lib/slugs";
-import {
-  resolvePlanOverride,
-  PLAN_OVERRIDE_FEATURE,
-} from "@/lib/queries";
-import { publicPageTag } from "@/lib/cache-tags";
-import { SITE_URL } from "@/lib/site";
+import { getPublicPageUrl } from "@/lib/slugs";
+import { getPublicPageBlocks, getPublicPageData } from "@/lib/public-page";
+import { profilePageJsonLd, serializeJsonLd } from "@/lib/json-ld";
+import { SITE_URL, absoluteUrl } from "@/lib/site";
 import { isInIndexProbation } from "@/lib/indexing";
 import { getTurnstileClientConfig } from "@/lib/turnstile";
 import { countConfirmed } from "@/lib/subscribers";
@@ -37,81 +26,16 @@ interface Props {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
-// NOTE: `export const revalidate = false` used to sit here. It was a no-op —
-// a dynamic segment with no generateStaticParams is server-rendered on demand
-// (confirmed by `next build`: this route reports as ƒ, and prerender-manifest
-// lists no dynamic route for it), so the page was never in the full-route
-// cache and revalidatePath() could not affect it. The result was two database
-// queries on every single public page view.
-//
-// Caching is therefore done at the data layer, which works regardless of how
-// the route itself is rendered, and is invalidated by tag on publish/edit.
-//
-// The in-app browser bar depends on the request's User-Agent, so it is decided
-// in the page component, never inside these cached loaders. If a CDN cache is
-// ever put in front of this route, it must Vary on User-Agent (or the
-// detection must move to the client).
-async function getPageData(slug: string) {
-  const normalized = normalizeSlug(slug);
-
-  return unstable_cache(
-    async () => {
-      const result = await db
-        .select({
-          page: pages,
-          plan: workspaces.plan,
-          planOverride: entitlementOverrides.value,
-        })
-        .from(pages)
-        .innerJoin(workspaces, eq(pages.workspaceId, workspaces.id))
-        // Comped plans live in entitlement_overrides, not in workspaces.plan.
-        // Without this join the render path disagreed with the editor: a comped
-        // Pro account could hide the badge, have it saved, and still see it.
-        .leftJoin(
-          entitlementOverrides,
-          and(
-            eq(entitlementOverrides.workspaceId, workspaces.id),
-            eq(entitlementOverrides.feature, PLAN_OVERRIDE_FEATURE),
-          ),
-        )
-        // Slugs are stored normalized; lowercasing here means a shared link
-        // with different capitalisation still resolves instead of 404ing.
-        .where(eq(pages.slug, normalized))
-        .limit(1);
-
-      const row = result[0];
-      if (!row) return null;
-
-      const { planOverride, ...rest } = row;
-      return { ...rest, plan: resolvePlanOverride(planOverride) ?? rest.plan };
-    },
-    ["public-page", normalized],
-    { tags: [publicPageTag(normalized)], revalidate: 300 },
-  )();
-}
-
-async function getPageBlocks(pageId: string, slug: string) {
-  const normalized = normalizeSlug(slug);
-
-  return unstable_cache(
-    async () =>
-      db
-        .select()
-        .from(blocks)
-        // Filter hidden blocks in SQL, not at render time. BlockRenderer
-        // returning null keeps them out of the DOM, but they still travelled to
-        // the browser inside the RSC payload — so a block the owner hid was
-        // readable in View Source, label, URL and all.
-        .where(and(eq(blocks.pageId, pageId), eq(blocks.isVisible, true)))
-        .orderBy(asc(blocks.position)),
-    ["public-page-blocks", pageId],
-    { tags: [publicPageTag(normalized)], revalidate: 300 },
-  )();
-}
+// Page data comes from the cached loaders in src/lib/public-page.ts (data-layer
+// cache, tag-invalidated, dates revived after the JSON round trip). The in-app
+// browser bar depends on the request's User-Agent, so it is decided in the
+// page component, never inside those loaders. If a CDN cache is ever put in
+// front of this route, it must Vary on User-Agent (or the detection must move
+// to the client).
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params;
-  const result = await getPageData(username);
+  const result = await getPublicPageData(username);
 
   // Also gate on isPublished: metadata used to be generated for draft pages,
   // exposing an unpublished title/bio on a route that 404s.
@@ -152,14 +76,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PublicPage({ params, searchParams }: Props) {
   const { username } = await params;
-  const result = await getPageData(username);
+  const result = await getPublicPageData(username);
 
   if (!result || !result.page.isPublished) {
     notFound();
   }
 
   const { page, plan } = result;
-  const pageBlocks = await getPageBlocks(page.id, page.slug);
+  const pageBlocks = await getPublicPageBlocks(page.id, page.slug);
 
   const theme = page.theme as Partial<ThemeTokens> | null;
   const isPro = plan === "pro";
@@ -196,6 +120,14 @@ export default async function PublicPage({ params, searchParams }: Props) {
         )
       : null;
 
+  // Public route only: the editor and dashboard previews render PublicPageView
+  // without it, so a draft never emits structured data.
+  const jsonLd = profilePageJsonLd({
+    page,
+    blocks: pageBlocks,
+    canonicalUrl: absoluteUrl(getPublicPageUrl(page.slug)),
+  });
+
   return (
     <>
       <TemplateRenderer
@@ -205,6 +137,10 @@ export default async function PublicPage({ params, searchParams }: Props) {
         showReport
         runtime={runtime}
         inApp={inApp ?? undefined}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
       <PageBeacon
         slug={page.slug}
