@@ -14,20 +14,21 @@ import { GOOGLE_FONTS } from "./theme";
 export function getGoogleFontsUrl(
   fontValues: (string | undefined)[],
 ): string | null {
-  const families = new Set<string>();
+  const families = new Map<string, readonly string[]>();
 
   for (const value of fontValues) {
     if (!value) continue;
     const match = GOOGLE_FONTS.find((font) => font.value === value);
-    if (match) families.add(match.name);
+    if (match) families.set(match.name, match.weights);
   }
 
   if (families.size === 0) return null;
 
   const params = [...families]
-    .sort()
+    .sort(([a], [b]) => a.localeCompare(b))
     .map(
-      (name) => `family=${encodeURIComponent(name).replace(/%20/g, "+")}:wght@400;500;700`,
+      ([name, weights]) =>
+        `family=${encodeURIComponent(name).replace(/%20/g, "+")}:wght@${weights.join(";")}`,
     )
     .join("&");
 

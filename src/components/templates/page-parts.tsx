@@ -9,6 +9,7 @@ import {
   featuredLinkStyle,
 } from "@/lib/templates/theme";
 import { getGoogleFontsUrl } from "@/lib/templates/fonts";
+import { genericFamily, type ResolvedFonts } from "@/lib/templates/font-types";
 import { parseBlockContent } from "@/lib/blocks/content";
 import { gridPlacement, isGridLayout } from "@/lib/templates/layout";
 import { BlockRenderer } from "@/components/blocks/block-renderer";
@@ -32,6 +33,7 @@ export function PageFrame({
   children,
   lang,
   dir,
+  fonts,
 }: {
   theme: ThemeTokens;
   className?: string;
@@ -48,8 +50,23 @@ export function PageFrame({
    */
   lang?: string;
   dir?: "ltr" | "rtl";
+  /**
+   * Self-hosted theme fonts from the server (src/lib/templates/font-loader.ts).
+   * When given, the font variables point at the next/font families and only
+   * families it could not host are fetched from Google; when omitted (the
+   * editor's client preview) every Google family comes from the stylesheet.
+   */
+  fonts?: ResolvedFonts;
 }) {
-  const cssVars = themeToCssVars(theme);
+  const cssVars = {
+    ...themeToCssVars(theme),
+    ...(fonts?.heading
+      ? { "--ln-font-heading": `${fonts.heading.fontFamily}, ${genericFamily(theme.fontHeading)}` }
+      : {}),
+    ...(fonts?.body
+      ? { "--ln-font-body": `${fonts.body.fontFamily}, ${genericFamily(theme.fontBody)}` }
+      : {}),
+  };
 
   const backgroundStyle: React.CSSProperties = {};
   if (theme.backgroundEffect === "gradient" && theme.backgroundGradient) {
@@ -59,7 +76,12 @@ export function PageFrame({
   // Load only the Google font families this page actually selected. Without
   // this the family name was written into the CSS stack but no font file was
   // ever requested, so every Pro font silently rendered as the fallback.
-  const googleFontsUrl = getGoogleFontsUrl([theme.fontHeading, theme.fontBody]);
+  // Server renders pass `fonts`, where the families are self-hosted and this
+  // URL covers only what could not be; the client preview still loads all of
+  // them from Google.
+  const googleFontsUrl = fonts
+    ? fonts.remoteUrl
+    : getGoogleFontsUrl([theme.fontHeading, theme.fontBody]);
 
   return (
     <div
