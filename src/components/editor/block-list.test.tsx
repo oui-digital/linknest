@@ -85,6 +85,9 @@ describe("BlockList rows", () => {
     expect(screen.getByText("Hidden — not on your page yet")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Show" })).toBeTruthy();
     expect(screen.queryAllByText("Hidden — not on your page yet")).toHaveLength(1);
+    // The status has its own row; the header row still carries the label.
+    const label = screen.getByText("Second");
+    expect(label.closest("div")?.textContent).not.toContain("Hidden");
   });
 
   it("offers an insertion point at the top and between rows", () => {

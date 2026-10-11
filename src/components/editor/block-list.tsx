@@ -582,7 +582,7 @@ function SortableBlockItem({
         </span>
 
         {/* Label */}
-        <span className="flex-1 truncate text-sm">{displayLabel}</span>
+        <span className="min-w-0 flex-1 truncate text-sm">{displayLabel}</span>
 
         {/* Clicks over the plan's window: the prune decision. Rendered only
             with data, so an absent chip never reads as zero. Embeds count
@@ -599,22 +599,6 @@ function SortableBlockItem({
           ) : null
         )}
 
-        {/* A block added to a live page starts hidden (createBlock). Say so,
-            and offer the one click that puts it on the page. */}
-        {!block.isVisible && (
-          <>
-            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-              Hidden — not on your page yet
-            </span>
-            <button
-              type="button"
-              onClick={() => onUpdate(block.id, { isVisible: true }, { immediate: true })}
-              className="text-xs font-medium text-gray-700 underline hover:text-black"
-            >
-              Show
-            </button>
-          </>
-        )}
 
         {/* Save state */}
         {(saveStatus === "pending" || saveStatus === "saving") && (
@@ -639,6 +623,24 @@ function SortableBlockItem({
           Delete
         </button>
       </div>
+
+      {/* A block added to a live page starts hidden (createBlock). Its own
+          row, not the header: on a phone the header's move controls, badge
+          and actions used up the width and the label collapsed to nothing. */}
+      {!block.isVisible && (
+        <div className="flex items-center justify-between gap-3 border-t border-amber-100 bg-amber-50 px-3 py-2">
+          <span className="text-[11px] font-medium text-amber-800">
+            Hidden — not on your page yet
+          </span>
+          <button
+            type="button"
+            onClick={() => onUpdate(block.id, { isVisible: true }, { immediate: true })}
+            className="shrink-0 text-xs font-medium text-amber-900 underline hover:text-black"
+          >
+            Show
+          </button>
+        </div>
+      )}
 
       {/* A refused save stays visible, with its reason, until it goes through.
           The edit is kept in the form; nothing is rolled back. */}

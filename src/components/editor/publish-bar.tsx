@@ -126,7 +126,7 @@ export function PublishBar({ page, saves, ops, onPageChange, onError }: PublishB
 
   return (
     <>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <a
           href={`/dashboard/preview/${page.id}`}
           target="_blank"

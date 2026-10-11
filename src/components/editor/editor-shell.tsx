@@ -204,15 +204,17 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
   return (
     <div className="flex h-screen flex-col bg-gray-50">
       {/* Top bar */}
-      <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3">
-        <div className="flex items-center gap-4">
+      {/* Wraps on phones: the status pill and actions take a second row rather
+          than pushing the document wider than the viewport. */}
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-gray-200 bg-white px-4 py-3">
+        <div className="flex min-w-0 items-center gap-4">
           <Link
             href="/dashboard"
-            className="text-sm text-gray-500 hover:text-gray-800"
+            className="shrink-0 text-sm text-gray-500 hover:text-gray-800"
           >
             &larr; Back
           </Link>
-          <span className="text-sm font-medium">{pageState.title}</span>
+          <span className="min-w-0 truncate text-sm font-medium">{pageState.title}</span>
         </div>
         <PublishBar
           page={pageState}
