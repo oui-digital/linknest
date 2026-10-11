@@ -114,7 +114,7 @@ lock the page row: an edit rechecks `is_published`, publish rechecks
 `content_version` and moderation holds, and either retries if something moved.
 New free pages carry `noindex` and stay out of the sitemap for 14 days after
 `first_published_at` (`src/lib/indexing.ts`). User links are always
-`rel="nofollow ugc me"`.
+`rel="nofollow ugc"`; the social-icon links add `me`, the identity claim Mastodon verifies.
 
 **Moderation.** State is a set of holds folded from `page_moderation_log` in
 `seq` order (`src/lib/moderation.ts`). An `unpublished` row from `admin_manual`

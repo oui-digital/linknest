@@ -160,9 +160,12 @@ export async function applyLiveEdit<T>(
         throw new RejectedWrite(value.error);
       }
 
+      // updatedAt moves with every block write too: the public page's
+      // JSON-LD dateModified reads it, and block-only edits used to leave it
+      // at the last settings change.
       await tx
         .update(pages)
-        .set({ contentVersion: sql`${pages.contentVersion} + 1` })
+        .set({ contentVersion: sql`${pages.contentVersion} + 1`, updatedAt: new Date() })
         .where(eq(pages.id, pageId));
 
       return {

@@ -54,7 +54,7 @@ export function PageFrame({
 
   return (
     <div
-      className={className}
+      className={`ln-page ${className ?? ""}`.trim()}
       style={{
         ...cssVars,
         backgroundColor: "var(--ln-color-bg)",
@@ -102,11 +102,15 @@ export function PageHeader({ page }: { page: Page }) {
   return (
     <div className="mb-10 flex flex-col items-center text-center">
       <div className="mb-4">
+        {/* The reviewer flagged the empty alt. The name is announced twice
+            (image, then h1) — the lesser problem; a per-page description
+            field will let owners say what the photo shows. */}
         <AvatarFallback
           avatarUrl={page.avatarUrl}
           name={page.title}
           slug={page.slug}
           size={96}
+          alt={page.title}
         />
       </div>
       <p

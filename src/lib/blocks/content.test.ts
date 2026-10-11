@@ -26,6 +26,13 @@ describe("block content writers", () => {
     expect(blockContentWriters.text.safeParse({ text: "x".repeat(5001) }).success).toBe(false);
   });
 
+  it("accept the text quote variant and reject unknown variants", () => {
+    expect(blockContentWriters.text.safeParse({ text: "a", variant: "quote" }).success).toBe(true);
+    expect(blockContentWriters.text.safeParse({ text: "a", variant: "paragraph" }).success).toBe(true);
+    expect(blockContentWriters.text.safeParse({ text: "a", variant: "shout" }).success).toBe(false);
+    expect(parseBlockContent("text", { text: "a", variant: "quote", bogus: 1 })).toEqual({ text: "a", variant: "quote" });
+  });
+
   it("are reachable by runtime type name", () => {
     expect(blockContentWriterFor("text").safeParse({ text: "ok" }).success).toBe(true);
     expect(isBlockType("text")).toBe(true);

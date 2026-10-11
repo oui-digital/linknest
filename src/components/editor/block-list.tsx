@@ -28,7 +28,13 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { createBlock, deleteBlock, reorderBlocks } from "@/lib/actions/blocks";
-import { parseBlockContent, type BlockType, type SocialItem } from "@/lib/blocks/content";
+import {
+  parseBlockContent,
+  TEXT_VARIANTS,
+  type BlockType,
+  type SocialItem,
+  type TextVariant,
+} from "@/lib/blocks/content";
 import type { LayoutType } from "@/lib/templates";
 import { gridPlacement, isGridLayout, sizeOptions, type BlockSize } from "@/lib/templates/layout";
 import { descriptionHint } from "@/lib/blocks/description-hint";
@@ -787,6 +793,37 @@ function SortableBlockItem({
                 placeholder="Write a paragraph…"
                 className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
               />
+              <div className="mt-2">
+                <span className="text-xs font-medium text-gray-500">Style</span>
+                <div className="mt-1 flex gap-1.5" role="radiogroup" aria-label="Text style">
+                  {TEXT_VARIANTS.map((variant) => {
+                    const current = (content.variant as TextVariant | undefined) ?? "paragraph";
+                    return (
+                      <button
+                        key={variant}
+                        role="radio"
+                        aria-checked={current === variant}
+                        onClick={() =>
+                          onUpdate(block.id, {}, {
+                            immediate: true,
+                            contentPatch: { variant: variant === "paragraph" ? undefined : variant },
+                          })
+                        }
+                        className={`rounded px-2 py-1 text-[11px] font-medium capitalize transition-colors ${
+                          current === variant
+                            ? "bg-gray-900 text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {variant}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Quote marks a testimonial as a quotation for search engines and screen readers.
+                </p>
+              </div>
             </div>
           )}
           {block.type === "email_capture" && (

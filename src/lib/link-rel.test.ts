@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { USER_LINK_REL, isExternalPage } from "./link-rel";
+import { IDENTITY_LINK_REL, USER_LINK_REL, isExternalPage } from "./link-rel";
 
 /**
  * Every link block used to render target="_blank" unconditionally. For a tel:
@@ -41,12 +41,25 @@ describe("user link rel", () => {
     expect(tokens).toContain("ugc");
   });
 
-  it("keeps rel=me so Mastodon profile verification still works", () => {
-    expect(tokens).toContain("me");
+  // A link block pointing at a client's site is not an identity claim.
+  it("does not claim ordinary links as the owner's identity", () => {
+    expect(tokens).not.toContain("me");
   });
 
   it("keeps the tab-isolation tokens", () => {
     expect(tokens).toContain("noopener");
     expect(tokens).toContain("noreferrer");
+  });
+});
+
+describe("identity link rel (social icons)", () => {
+  const tokens = IDENTITY_LINK_REL.split(" ");
+
+  it("keeps rel=me so Mastodon profile verification still works", () => {
+    expect(tokens).toContain("me");
+  });
+
+  it("carries everything an ordinary user link does", () => {
+    for (const token of USER_LINK_REL.split(" ")) expect(tokens).toContain(token);
   });
 });

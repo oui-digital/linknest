@@ -125,3 +125,19 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ─── Public page keyboard focus ───
+   One rule for every interactive element inside a public page (PageFrame
+   carries `.ln-page`), so a new block cannot forget its focus style. The ring
+   is the theme's text colour, which contrasts with the page background by
+   construction; the halo paints the page background under it so it stays
+   visible on gradients and next to neighbouring elements.
+   `!important` because link blocks set box-shadow inline (the theme's button
+   shadow, or a per-block override), and several button styles make that
+   shadow `none`, which cannot be composed into a shadow list. The button's own
+   shadow is replaced only while it has keyboard focus. */
+.ln-page :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ln-color-text);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--ln-color-bg) !important;
+}

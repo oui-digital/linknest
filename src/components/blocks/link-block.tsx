@@ -43,12 +43,13 @@ export function LinkBlock({ block, resolvedStyle, tile = false }: LinkBlockProps
     boxShadow: "var(--ln-btn-shadow)",
     backdropFilter: "var(--ln-btn-backdrop)",
     WebkitBackdropFilter: "var(--ln-btn-backdrop)",
-    // Two-tone focus ring. Deliberately NOT built from --ln-color-accent: on
-    // several templates the accent is byte-identical to the button's resting
-    // border (so focus would look the same as blur), and the accent is
-    // user-editable, meaning a page owner could tune their own focus indicator
-    // into invisibility. Text-on-background always contrasts by construction,
-    // and the outer halo guarantees a visible edge whichever side it lands on.
+    // Two-tone focus ring (the halo comes from the `.ln-page` rule in
+    // globals.css, since this inline box-shadow would otherwise win over any
+    // class). Deliberately NOT built from --ln-color-accent: on several
+    // templates the accent is byte-identical to the button's resting border
+    // (so focus would look the same as blur), and the accent is user-editable,
+    // meaning a page owner could tune their own focus indicator into
+    // invisibility. Text-on-background always contrasts by construction.
     outlineColor: "var(--ln-color-text)",
   };
 
@@ -71,7 +72,7 @@ export function LinkBlock({ block, resolvedStyle, tile = false }: LinkBlockProps
           : isCard
             ? "flex items-center gap-3"
             : "block text-center"
-      } w-full wrap-anywhere transition-transform hover:scale-[1.02] focus-visible:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[box-shadow:0_0_0_4px_var(--ln-color-bg)]`}
+      } w-full wrap-anywhere transition-transform hover:scale-[1.02] focus-visible:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2`}
       style={resolvedStyle ? { ...baseStyle, ...resolvedStyle } : baseStyle}
     >
       {tile ? (
