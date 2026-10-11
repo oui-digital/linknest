@@ -30,8 +30,10 @@ import { CSS } from "@dnd-kit/utilities";
 import { createBlock, deleteBlock, reorderBlocks } from "@/lib/actions/blocks";
 import { parseBlockContent, type BlockType, type SocialItem } from "@/lib/blocks/content";
 import type { LayoutType } from "@/lib/templates";
-import { sizeOptions, type BlockSize } from "@/lib/templates/layout";
+import { gridPlacement, isGridLayout, sizeOptions, type BlockSize } from "@/lib/templates/layout";
+import { descriptionHint } from "@/lib/blocks/description-hint";
 import type { SaveCoordinator, SaveStatus } from "./save-coordinator";
+import type { PendingOps } from "./pending-ops";
 import { ImageUpload } from "./image-upload";
 import { applyBlockEdit, restoreBlock } from "./block-edit";
 import { SocialsEditor } from "./socials-editor";
@@ -74,8 +76,13 @@ interface BlockListProps {
   theme: ThemeTokens;
   layout: LayoutType;
   saves: SaveCoordinator;
+  /** Counts create, reorder and delete for the publish bar's status. */
+  ops: PendingOps;
   onError: (message: string) => void;
 }
+
+/** Where a new block goes: `null` = top, an id = after that block, omitted = end. */
+type InsertAfter = string | null | undefined;
 
 export function BlockList({
   pageId,
@@ -85,9 +92,13 @@ export function BlockList({
   theme,
   layout,
   saves,
+  ops,
   onError,
 }: BlockListProps) {
   const [isAdding, setIsAdding] = useState(false);
+  // One block open for editing at a time, owned here so a freshly inserted
+  // block can be opened and scrolled to.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const sorted = [...blocks].sort((a, b) => a.position - b.position);
 
   const sensors = useSensors(
@@ -113,40 +124,18 @@ export function BlockList({
       const previous = blocks;
       onBlocksChange(reordered);
 
-      const result = await reorderBlocks({
-        pageId,
-        blockIds: reordered.map((b) => b.id),
-      });
+      const result = await ops.track(
+        reorderBlocks({
+          pageId,
+          blockIds: reordered.map((b) => b.id),
+        }),
+      );
       if (result?.error) {
         onBlocksChange(previous);
         onError(result.error);
       }
     },
-    [sorted, blocks, pageId, onBlocksChange, onError],
-  );
-
-  const handleAddBlock = useCallback(
-    async (type: BlockType) => {
-      setIsAdding(true);
-      try {
-        const result = await createBlock({
-          pageId,
-          type,
-          label: DEFAULT_LABELS[type],
-        });
-
-        if (result.block) {
-          onBlocksChange([...blocks, result.block]);
-        } else if (result.error) {
-          // Previously discarded — which is why the free-tier block-limit
-          // upsell was unreachable and the button just stopped working at 50.
-          onError(result.error);
-        }
-      } finally {
-        setIsAdding(false);
-      }
-    },
-    [pageId, blocks, onBlocksChange, onError],
+    [sorted, blocks, pageId, ops, onBlocksChange, onError],
   );
 
   // The list reflects an edit at once; the coordinator sends it after a pause
@@ -162,6 +151,53 @@ export function BlockList({
   useEffect(() => {
     latestBlocks.current = blocks;
   }, [blocks]);
+
+  // New blocks used to append at the bottom only, so on a long page every
+  // addition meant a drag from the end. The server inserts at the requested
+  // slot and shifts the rest; the list mirrors that, opens the new block for
+  // editing and brings it into view.
+  const handleAddBlock = useCallback(
+    async (type: BlockType, after: InsertAfter) => {
+      setIsAdding(true);
+      try {
+        const result = await ops.track(
+          createBlock({
+            pageId,
+            type,
+            label: DEFAULT_LABELS[type],
+            afterBlockId: after,
+          }),
+        );
+
+        if (result.block) {
+          const current = [...latestBlocks.current].sort((a, b) => a.position - b.position);
+          const index =
+            after === undefined
+              ? current.length
+              : after === null
+                ? 0
+                : current.findIndex((b) => b.id === after) + 1;
+          current.splice(index, 0, result.block);
+          const next = current.map((b, position) => ({ ...b, position }));
+          latestBlocks.current = next;
+          onBlocksChange(next);
+          setEditingId(result.block.id);
+          requestAnimationFrame(() => {
+            document
+              .getElementById(blockRowId(result.block.id))
+              ?.scrollIntoView({ block: "nearest" });
+          });
+        } else if (result.error) {
+          // Previously discarded — which is why the free-tier block-limit
+          // upsell was unreachable and the button just stopped working at 50.
+          onError(result.error);
+        }
+      } finally {
+        setIsAdding(false);
+      }
+    },
+    [pageId, ops, onBlocksChange, onError],
+  );
 
   const handleUpdateBlock = useCallback(
     (blockId: string, updates: Partial<Block>, options?: UpdateOptions) => {
@@ -217,7 +253,7 @@ export function BlockList({
       latestBlocks.current = latestBlocks.current.filter((b) => b.id !== blockId);
       onBlocksChange(latestBlocks.current);
 
-      const request = deleteBlock(blockId).catch(() => ({
+      const request = ops.track(deleteBlock(blockId)).catch(() => ({
         error: "Couldn't delete the block. Please try again.",
       }));
       const held = saves.holdWhile(entity, request.then((r) => !r?.error));
@@ -229,7 +265,7 @@ export function BlockList({
       }
       await held;
     },
-    [blocks, saves, onBlocksChange, onError],
+    [blocks, saves, ops, onBlocksChange, onError],
   );
 
   const handleMoveBlock = useCallback(
@@ -247,16 +283,18 @@ export function BlockList({
       const previous = blocks;
       onBlocksChange(reordered);
 
-      const result = await reorderBlocks({
-        pageId,
-        blockIds: reordered.map((b) => b.id),
-      });
+      const result = await ops.track(
+        reorderBlocks({
+          pageId,
+          blockIds: reordered.map((b) => b.id),
+        }),
+      );
       if (result?.error) {
         onBlocksChange(previous);
         onError(result.error);
       }
     },
-    [sorted, blocks, pageId, onBlocksChange, onError],
+    [sorted, blocks, pageId, ops, onBlocksChange, onError],
   );
 
   return (
@@ -271,22 +309,30 @@ export function BlockList({
           strategy={verticalListSortingStrategy}
         >
           {sorted.map((block, index) => (
-            <SortableBlockItem
-              key={block.id}
-              block={block}
-              isFirst={index === 0}
-              isLast={index === sorted.length - 1}
-              plan={plan}
-              theme={theme}
-              layout={layout}
-              saveStatus={saves.status({ kind: "block", id: block.id })}
-              saveError={saves.error({ kind: "block", id: block.id })}
-              onUpdate={handleUpdateBlock}
-              onDelete={handleDeleteBlock}
-              onMove={handleMoveBlock}
-              onRetry={handleRetry}
-              onError={onError}
-            />
+            <div key={block.id} className="space-y-4">
+              <InsertPoint
+                label={index === 0 ? "Insert at top" : "Insert here"}
+                disabled={isAdding}
+                onPick={(type) => handleAddBlock(type, index === 0 ? null : sorted[index - 1].id)}
+              />
+              <SortableBlockItem
+                block={block}
+                isFirst={index === 0}
+                isLast={index === sorted.length - 1}
+                isEditing={editingId === block.id}
+                onToggleEdit={() => setEditingId((id) => (id === block.id ? null : block.id))}
+                plan={plan}
+                theme={theme}
+                layout={layout}
+                saveStatus={saves.status({ kind: "block", id: block.id })}
+                saveError={saves.error({ kind: "block", id: block.id })}
+                onUpdate={handleUpdateBlock}
+                onDelete={handleDeleteBlock}
+                onMove={handleMoveBlock}
+                onRetry={handleRetry}
+                onError={onError}
+              />
+            </div>
           ))}
         </SortableContext>
       </DndContext>
@@ -305,21 +351,83 @@ export function BlockList({
       {/* Add block buttons */}
       <div className="space-y-2 pt-2">
         <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-          Add block
+          {sorted.length > 0 ? "Add to end" : "Add block"}
         </p>
-        <div className="grid grid-cols-3 gap-2">
-          {BLOCK_PICKER.map(({ type, label }) => (
-            <button
-              key={type}
-              onClick={() => handleAddBlock(type)}
-              disabled={isAdding}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium transition-colors hover:bg-gray-50 disabled:opacity-50"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <BlockPicker disabled={isAdding} onPick={(type) => handleAddBlock(type, undefined)} />
       </div>
+    </div>
+  );
+}
+
+export function blockRowId(blockId: string): string {
+  return `block-row-${blockId}`;
+}
+
+// ─── Block picker + insertion point ─────────────────────────────────────────
+
+function BlockPicker({
+  disabled,
+  onPick,
+}: {
+  disabled: boolean;
+  onPick: (type: BlockType) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {BLOCK_PICKER.map(({ type, label }) => (
+        <button
+          key={type}
+          type="button"
+          onClick={() => onPick(type)}
+          disabled={disabled}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium transition-colors hover:bg-gray-50 disabled:opacity-50"
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A slot between two rows. On a pointer device it appears on hover or focus;
+ * below the `md` breakpoint it is always visible, since there is no hover.
+ */
+function InsertPoint({
+  label,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  disabled: boolean;
+  onPick: (type: BlockType) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="group relative -my-2 flex items-center justify-center py-1 md:opacity-0 md:transition-opacity md:focus-within:opacity-100 md:hover:opacity-100 md:[&:has([aria-expanded=true])]:opacity-100">
+      <span className="absolute inset-x-0 top-1/2 border-t border-dashed border-gray-300" aria-hidden="true" />
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
+        aria-expanded={open}
+        aria-label={label}
+        className="relative z-10 flex h-7 items-center gap-1 rounded-full border border-gray-300 bg-white px-2.5 text-[11px] font-medium text-gray-600 shadow-sm transition-colors hover:border-gray-400 hover:text-gray-900 disabled:opacity-50"
+      >
+        <span aria-hidden="true" className="text-base leading-none">+</span>
+        {label}
+      </button>
+      {open && (
+        <div className="absolute top-full z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+          <BlockPicker
+            disabled={disabled}
+            onPick={(type) => {
+              setOpen(false);
+              onPick(type);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -330,6 +438,8 @@ function SortableBlockItem({
   block,
   isFirst,
   isLast,
+  isEditing,
+  onToggleEdit,
   plan,
   theme,
   layout,
@@ -344,6 +454,8 @@ function SortableBlockItem({
   block: Block;
   isFirst: boolean;
   isLast: boolean;
+  isEditing: boolean;
+  onToggleEdit: () => void;
   plan: "free" | "pro";
   theme: ThemeTokens;
   layout: LayoutType;
@@ -355,7 +467,6 @@ function SortableBlockItem({
   onRetry: (id: string) => void;
   onError: (message: string) => void;
 }) {
-  const [isEditing, setIsEditing] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: block.id });
 
@@ -376,6 +487,9 @@ function SortableBlockItem({
   );
   const imageUrl = (content.imageUrl as string | undefined) ?? block.url ?? null;
   const failed = saveStatus === "failed";
+  // Half-width = a default-size tile in a grid template (gridPlacement).
+  const tile = isGridLayout(layout) && gridPlacement(block, layout).tile;
+  const hint = descriptionHint((content.description as string | undefined) ?? "", { tile });
 
   const handleStyleChange = useCallback(
     (updates: Partial<BlockStyleOverrides>) => {
@@ -389,8 +503,16 @@ function SortableBlockItem({
     onUpdate(block.id, {}, { immediate: true, contentPatch: { styleOverrides: undefined } });
   }, [block.id, onUpdate]);
 
+  const displayLabel =
+    block.type === "socials"
+      ? `Social icons · ${((content.items as SocialItem[] | undefined) ?? []).length}`
+      : block.type === "email_capture"
+        ? `Email sign-up · ${(content.heading as string | undefined) || "Get updates by email"}`
+        : block.label || block.url || block.type;
+
   return (
     <div
+      id={blockRowId(block.id)}
       ref={setNodeRef}
       style={style}
       className={`rounded-lg border bg-white ${failed ? "border-red-300" : "border-gray-200"}`}
@@ -413,25 +535,29 @@ function SortableBlockItem({
           </svg>
         </button>
 
-        {/* Arrow buttons (mobile only) */}
-        <div className="flex gap-1 md:hidden">
+        {/* Move buttons: the only way to reorder on a phone (the handle needs
+            a pointer), and a discoverable alternative to the handle's
+            keyboard mode on desktop. 44px targets below md; compact above. */}
+        <div className="flex gap-1">
           <button
+            type="button"
             onClick={() => onMove(block.id, "up")}
             disabled={isFirst}
-            className="text-gray-400 hover:text-gray-600 disabled:opacity-30"
-            aria-label="Move up"
+            className="flex h-11 w-11 items-center justify-center rounded text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:opacity-30 md:h-7 md:w-7"
+            aria-label={`Move "${displayLabel}" up`}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
               <path d="M8 3l-6 6h12z" />
             </svg>
           </button>
           <button
+            type="button"
             onClick={() => onMove(block.id, "down")}
             disabled={isLast}
-            className="text-gray-400 hover:text-gray-600 disabled:opacity-30"
-            aria-label="Move down"
+            className="flex h-11 w-11 items-center justify-center rounded text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:opacity-30 md:h-7 md:w-7"
+            aria-label={`Move "${displayLabel}" down`}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
               <path d="M8 13l6-6H2z" />
             </svg>
           </button>
@@ -443,13 +569,7 @@ function SortableBlockItem({
         </span>
 
         {/* Label */}
-        <span className="flex-1 truncate text-sm">
-          {block.type === "socials"
-            ? `Social icons · ${((content.items as SocialItem[] | undefined) ?? []).length}`
-            : block.type === "email_capture"
-              ? `Email sign-up · ${(content.heading as string | undefined) || "Get updates by email"}`
-              : block.label || block.url || block.type}
-        </span>
+        <span className="min-w-0 flex-1 truncate text-sm">{displayLabel}</span>
 
         {/* Save state */}
         {(saveStatus === "pending" || saveStatus === "saving") && (
@@ -461,7 +581,8 @@ function SortableBlockItem({
 
         {/* Actions */}
         <button
-          onClick={() => setIsEditing(!isEditing)}
+          type="button"
+          onClick={onToggleEdit}
           className="text-xs text-gray-400 hover:text-gray-600"
         >
           {isEditing ? "Done" : "Edit"}
@@ -473,6 +594,24 @@ function SortableBlockItem({
           Delete
         </button>
       </div>
+
+      {/* A block added to a live page starts hidden (createBlock). Its own
+          row, not the header: on a phone the header's move controls, badge
+          and actions used up the width and the label collapsed to nothing. */}
+      {!block.isVisible && (
+        <div className="flex items-center justify-between gap-3 border-t border-amber-100 bg-amber-50 px-3 py-2">
+          <span className="text-[11px] font-medium text-amber-800">
+            Hidden — not on your page yet
+          </span>
+          <button
+            type="button"
+            onClick={() => onUpdate(block.id, { isVisible: true }, { immediate: true })}
+            className="shrink-0 text-xs font-medium text-amber-900 underline hover:text-black"
+          >
+            Show
+          </button>
+        </div>
+      )}
 
       {/* A refused save stays visible, with its reason, until it goes through.
           The edit is kept in the form; nothing is rolled back. */}
@@ -525,7 +664,10 @@ function SortableBlockItem({
             <>
               <div>
                 <label className="text-xs font-medium text-gray-500">
-                  Description <span className="text-gray-400">(optional)</span>
+                  Description <span className="text-gray-400">(optional)</span>{" "}
+                  <span className="text-gray-400">
+                    ({hint.count}/{hint.max})
+                  </span>
                 </label>
                 <textarea
                   value={(content.description as string | undefined) ?? ""}
@@ -533,10 +675,23 @@ function SortableBlockItem({
                     onUpdate(block.id, {}, { contentPatch: { description: e.target.value || undefined } })
                   }
                   rows={2}
-                  maxLength={200}
+                  maxLength={hint.max}
                   placeholder="A short line under the label"
+                  aria-describedby={`${blockRowId(block.id)}-description-hint`}
                   className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
                 />
+                {/* The page clamps descriptions to two lines; the editor used
+                    to say nothing and five cards shipped ending in "…". */}
+                <p
+                  id={`${blockRowId(block.id)}-description-hint`}
+                  className={`mt-1 text-[11px] ${hint.warn ? "font-medium text-amber-700" : "text-gray-400"}`}
+                >
+                  {hint.warn
+                    ? tile
+                      ? "This will likely be cut off on a half-width card — check the preview."
+                      : "This will likely be cut off after two lines — check the preview."
+                    : "Shows up to 2 lines on your page."}
+                </p>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-500">

@@ -27,7 +27,9 @@ export function BlockRenderer({
   resolvedStyle,
   tile = false,
 }: BlockRendererProps) {
-  if (!block.isVisible) return null;
+  // The public loader never sends hidden rows; the editor preview shows them
+  // dimmed (BlockLayout) so an owner can see the block they are editing.
+  if (!block.isVisible && mode !== "preview") return null;
 
   switch (block.type) {
     case "link":

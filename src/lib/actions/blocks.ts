@@ -4,11 +4,12 @@ import { z } from "zod";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { blocks } from "@/lib/db/schema";
+import { blocks, pages } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { publicPageTag } from "@/lib/cache-tags";
 import { checkUrls, normalizeUrl } from "@/lib/safe-browsing";
 import { applyBlockUpdate, applyLiveEdit, type BlockPatch } from "@/lib/live-edit";
+import { reorderBlocksWrite, resolveInsertPosition } from "@/lib/block-order";
 import { scheduleLinkFarmCheck } from "@/lib/link-farm-check";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import { getLimit, type PlanId } from "@/lib/entitlements";
@@ -45,6 +46,8 @@ const createBlockSchema = z.object({
   label: z.string().max(255).optional(),
   url: z.string().max(2048).optional(),
   content: contentInputSchema.optional(),
+  // Omitted: append. null: insert at the top. An id: insert right after it.
+  afterBlockId: z.string().uuid().nullable().optional(),
 });
 
 const updateBlockSchema = z.object({
@@ -241,22 +244,29 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
         if (existing) return { error: "This page already has an email sign-up block." };
       }
 
-      const [maxPos] = await tx
-        .select({
-          max: sql<number>`COALESCE(MAX(${blocks.position}), -1)`.mapWith(Number),
-        })
-        .from(blocks)
-        .where(eq(blocks.pageId, page.id));
+      const position = await resolveInsertPosition(tx, page.id, parsed.data.afterBlockId);
+      if (typeof position !== "number") return position;
+
+      // A block added to a live page starts hidden: owners watched new blocks
+      // appear on their public URL while they were still typing the label.
+      // The row is flagged in the editor and shown with one click, which
+      // re-scans its links like any other reveal (applyBlockUpdate).
+      const [live] = await tx
+        .select({ isPublished: pages.isPublished })
+        .from(pages)
+        .where(eq(pages.id, page.id))
+        .limit(1);
 
       const [created] = await tx
         .insert(blocks)
         .values({
           pageId: page.id,
           type: parsed.data.type,
-          position: (maxPos?.max ?? -1) + 1,
+          position,
           label: parsed.data.label ?? null,
           url: normalizedUrl,
           content: contentResult.content,
+          isVisible: !live?.isPublished,
         })
         .returning();
       return created;
@@ -469,35 +479,18 @@ export async function reorderBlocks(
   const { page } = result;
   const { blockIds } = parsed.data;
 
-  // The incoming list must be an exact permutation of the page's blocks.
-  // Without this, a duplicated id would collapse two blocks onto one position
-  // and a short list would leave stale positions behind, making ORDER BY
-  // position non-deterministic.
-  const owned = await db
-    .select({ id: blocks.id })
-    .from(blocks)
-    .where(eq(blocks.pageId, page.id));
-
-  const ownedIds = new Set(owned.map((b) => b.id));
-  const uniqueIncoming = new Set(blockIds);
-
-  if (
-    uniqueIncoming.size !== blockIds.length ||
-    blockIds.length !== ownedIds.size ||
-    blockIds.some((id) => !ownedIds.has(id))
-  ) {
-    return { error: "Block order is out of date. Refresh and try again." };
-  }
-
-  // One transaction: a partial failure must not leave duplicate positions.
-  await db.transaction(async (tx) => {
-    for (const [index, id] of blockIds.entries()) {
-      await tx
-        .update(blocks)
-        .set({ position: index, updatedAt: new Date() })
-        .where(and(eq(blocks.id, id), eq(blocks.pageId, page.id)));
-    }
+  // Under the page row lock, like every other block write: the permutation is
+  // checked and written in one locked step, so an insert that shifts positions
+  // can no longer slip between a reorder's validation and its writes (the
+  // reorder is refused as out of date instead). Nothing to scan, but the
+  // version bump means a publish that interleaved with a reorder retries.
+  const outcome = await applyLiveEdit(db, {
+    pageId: page.id,
+    introducedUrls: [],
+    checkUrls,
+    write: (tx) => reorderBlocksWrite(tx, page.id, blockIds),
   });
+  if (!outcome.ok) return { error: outcome.error };
 
   revalidatePath(`/${page.slug}`);
   revalidateTag(publicPageTag(page.slug), "max");

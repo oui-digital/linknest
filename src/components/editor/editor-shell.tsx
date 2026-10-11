@@ -19,6 +19,7 @@ import { LivePreview } from "./live-preview";
 import { PublishBar } from "./publish-bar";
 import { MobilePreviewOverlay } from "./mobile-preview-overlay";
 import { useSaveCoordinator } from "./use-save-coordinator";
+import { usePendingOps } from "./use-pending-ops";
 import { persistPatch } from "./persist-patch";
 import type { SaveCoordinator, SaveEntity, SaveOutcome, SavePatch } from "./save-coordinator";
 import Link from "next/link";
@@ -91,6 +92,9 @@ export function EditorShell({ page, initialBlocks, plan, publicHost }: EditorShe
   useEffect(() => {
     savesRef.current = saves;
   }, [saves]);
+  // Direct server actions (theme, template, create, reorder, delete) are
+  // counted here so the publish bar's status covers them too.
+  const ops = usePendingOps();
 
   // Derive theme from pageState — single source of truth (no separate theme state)
   const template = useMemo(
@@ -125,7 +129,7 @@ export function EditorShell({ page, initialBlocks, plan, publicHost }: EditorShe
       const newOverrides = { ...userOverrides, ...updates };
       setPageState((p) => ({ ...p, theme: newOverrides as Record<string, unknown> }));
       try {
-        const result = await saveTheme(pageState.id, updates);
+        const result = await ops.track(saveTheme(pageState.id, updates));
         if (result?.error) {
           setPageState(prev);
           setError(result.error);
@@ -135,7 +139,7 @@ export function EditorShell({ page, initialBlocks, plan, publicHost }: EditorShe
         setError("Couldn't save your style change. Please try again.");
       }
     },
-    [pageState, userOverrides],
+    [pageState, userOverrides, ops],
   );
 
   const handleTemplateChange = useCallback(
@@ -143,7 +147,7 @@ export function EditorShell({ page, initialBlocks, plan, publicHost }: EditorShe
       const prev = pageState;
       setPageState((p) => ({ ...p, templateId }));
       try {
-        const result = await updatePage({ pageId: pageState.id, templateId });
+        const result = await ops.track(updatePage({ pageId: pageState.id, templateId }));
         if (result?.error) {
           setPageState(prev);
           setError(result.error);
@@ -153,14 +157,14 @@ export function EditorShell({ page, initialBlocks, plan, publicHost }: EditorShe
         setError("Couldn't switch template. Please try again.");
       }
     },
-    [pageState],
+    [pageState, ops],
   );
 
   const handleResetOverrides = useCallback(async () => {
     const prev = pageState;
     setPageState((p) => ({ ...p, theme: {} as Record<string, unknown> }));
     try {
-      const result = await resetTheme(pageState.id);
+      const result = await ops.track(resetTheme(pageState.id));
       if (result?.error) {
         setPageState(prev);
         setError(result.error);
@@ -169,7 +173,7 @@ export function EditorShell({ page, initialBlocks, plan, publicHost }: EditorShe
       setPageState(prev);
       setError("Couldn't reset your theme. Please try again.");
     }
-  }, [pageState]);
+  }, [pageState, ops]);
 
   const handleBlocksUpdate = useCallback((newBlocks: Block[]) => {
     setBlocksState(newBlocks);
@@ -178,19 +182,22 @@ export function EditorShell({ page, initialBlocks, plan, publicHost }: EditorShe
   return (
     <div className="flex h-screen flex-col bg-gray-50">
       {/* Top bar */}
-      <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3">
-        <div className="flex items-center gap-4">
+      {/* Wraps on phones: the status pill and actions take a second row rather
+          than pushing the document wider than the viewport. */}
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-gray-200 bg-white px-4 py-3">
+        <div className="flex min-w-0 items-center gap-4">
           <Link
             href="/dashboard"
-            className="text-sm text-gray-500 hover:text-gray-800"
+            className="shrink-0 text-sm text-gray-500 hover:text-gray-800"
           >
             &larr; Back
           </Link>
-          <span className="text-sm font-medium">{pageState.title}</span>
+          <span className="min-w-0 truncate text-sm font-medium">{pageState.title}</span>
         </div>
         <PublishBar
           page={pageState}
           saves={saves}
+          ops={ops}
           onPageChange={handlePageUpdate}
           onError={setError}
         />
@@ -247,6 +254,7 @@ export function EditorShell({ page, initialBlocks, plan, publicHost }: EditorShe
                 theme={theme}
                 layout={template.layout}
                 saves={saves}
+                ops={ops}
                 onError={setError}
               />
             )}
