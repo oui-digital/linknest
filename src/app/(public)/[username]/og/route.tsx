@@ -18,6 +18,8 @@ export async function GET(
   }
 
   const image = await renderOgCard(data.page);
-  image.headers.set("Cache-Control", "public, max-age=3600, s-maxage=86400");
+  // One hour at the edge: the published-state check above runs at the
+  // origin only, so this bounds how long an unpublished page's card survives.
+  image.headers.set("Cache-Control", "public, max-age=3600, s-maxage=3600");
   return image;
 }

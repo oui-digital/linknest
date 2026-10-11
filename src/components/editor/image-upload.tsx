@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 interface ImageUploadProps {
   currentUrl?: string | null;
@@ -26,6 +26,17 @@ export function ImageUpload({
   const [isUploading, setIsUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // The instant preview is only a stand-in until the parent has the saved
+  // URL. Once `currentUrl` changes (the upload landed, or the owner removed
+  // the image) the blob is released: it used to outlive a Remove click and
+  // keep showing a thumbnail the settings no longer had.
+  useEffect(() => {
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL?.(current);
+      return null;
+    });
+  }, [currentUrl]);
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
