@@ -7,6 +7,7 @@ import { isRtl, pageLanguage } from "@/lib/languages";
 import { StickyBanner } from "@/components/blocks/sticky-banner";
 import { OpenInBrowserBar } from "@/components/blocks/open-in-browser-bar";
 import type { InAppEscape } from "@/lib/in-app-browser";
+import type { ResolvedFonts } from "@/lib/templates/font-types";
 import {
   BlockRuntimeProvider,
   type BlockRuntime,
@@ -41,6 +42,7 @@ export function PublicPageView({
   runtime,
   inApp,
   frameClassName,
+  fonts,
 }: {
   page: Page;
   blocks: Block[];
@@ -56,6 +58,8 @@ export function PublicPageView({
    */
   inApp?: InAppEscape;
   frameClassName?: string;
+  /** Self-hosted theme fonts (server only); omitted, the Google stylesheet loads. */
+  fonts?: ResolvedFonts;
 }) {
   const layout = getTemplate(page.templateId).layout;
   const lang = pageLanguage(page.language);
@@ -76,6 +80,7 @@ export function PublicPageView({
       <PageFrame
         theme={theme}
         className={frameClassName}
+        fonts={fonts}
         lang={lang}
         dir={isRtl(lang) ? "rtl" : undefined}
         top={

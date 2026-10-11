@@ -310,38 +310,45 @@ export const SYSTEM_FONTS = [
 ];
 
 // ─── Google Fonts (Pro Tier) ────────────────────────────────────────────────
+//
+// `weights` is the single list both loaders use: the self-hosted next/font
+// modules in ./google-fonts (checked against it by a test) and the Google
+// stylesheet URL the editor preview still requests. Most families ship
+// 400/500/700; Crimson Text has no 500, DM Serif Display is 400 only, Lato
+// has no 500 (700/900 instead). Requesting a missing weight used to make the
+// whole stylesheet request fail quietly.
 
 export const GOOGLE_FONTS = [
-  { id: "archivo", name: "Archivo", value: "'Archivo', sans-serif" },
-  { id: "barlow", name: "Barlow", value: "'Barlow', sans-serif" },
-  { id: "bitter", name: "Bitter", value: "'Bitter', serif" },
-  { id: "cabin", name: "Cabin", value: "'Cabin', sans-serif" },
-  { id: "crimson-text", name: "Crimson Text", value: "'Crimson Text', serif" },
-  { id: "dm-sans", name: "DM Sans", value: "'DM Sans', sans-serif" },
-  { id: "dm-serif", name: "DM Serif Display", value: "'DM Serif Display', serif" },
-  { id: "fira-sans", name: "Fira Sans", value: "'Fira Sans', sans-serif" },
-  { id: "inconsolata", name: "Inconsolata", value: "'Inconsolata', monospace" },
-  { id: "jetbrains-mono", name: "JetBrains Mono", value: "'JetBrains Mono', monospace" },
-  { id: "josefin", name: "Josefin Sans", value: "'Josefin Sans', sans-serif" },
-  { id: "karla", name: "Karla", value: "'Karla', sans-serif" },
-  { id: "lato", name: "Lato", value: "'Lato', sans-serif" },
-  { id: "libre-baskerville", name: "Libre Baskerville", value: "'Libre Baskerville', serif" },
-  { id: "lora", name: "Lora", value: "'Lora', serif" },
-  { id: "merriweather", name: "Merriweather", value: "'Merriweather', serif" },
-  { id: "montserrat", name: "Montserrat", value: "'Montserrat', sans-serif" },
-  { id: "nunito", name: "Nunito", value: "'Nunito', sans-serif" },
-  { id: "open-sans", name: "Open Sans", value: "'Open Sans', sans-serif" },
-  { id: "overpass", name: "Overpass", value: "'Overpass', sans-serif" },
-  { id: "playfair", name: "Playfair Display", value: "'Playfair Display', serif" },
-  { id: "poppins", name: "Poppins", value: "'Poppins', sans-serif" },
-  { id: "quicksand", name: "Quicksand", value: "'Quicksand', sans-serif" },
-  { id: "raleway", name: "Raleway", value: "'Raleway', sans-serif" },
-  { id: "roboto", name: "Roboto", value: "'Roboto', sans-serif" },
-  { id: "rubik", name: "Rubik", value: "'Rubik', sans-serif" },
-  { id: "sora", name: "Sora", value: "'Sora', sans-serif" },
-  { id: "source-serif", name: "Source Serif 4", value: "'Source Serif 4', serif" },
-  { id: "space-grotesk", name: "Space Grotesk", value: "'Space Grotesk', sans-serif" },
-  { id: "work-sans", name: "Work Sans", value: "'Work Sans', sans-serif" },
+  { id: "archivo", name: "Archivo", value: "'Archivo', sans-serif", weights: ["400", "500", "700"] },
+  { id: "barlow", name: "Barlow", value: "'Barlow', sans-serif", weights: ["400", "500", "700"] },
+  { id: "bitter", name: "Bitter", value: "'Bitter', serif", weights: ["400", "500", "700"] },
+  { id: "cabin", name: "Cabin", value: "'Cabin', sans-serif", weights: ["400", "500", "700"] },
+  { id: "crimson-text", name: "Crimson Text", value: "'Crimson Text', serif", weights: ["400", "600", "700"] },
+  { id: "dm-sans", name: "DM Sans", value: "'DM Sans', sans-serif", weights: ["400", "500", "700"] },
+  { id: "dm-serif", name: "DM Serif Display", value: "'DM Serif Display', serif", weights: ["400"] },
+  { id: "fira-sans", name: "Fira Sans", value: "'Fira Sans', sans-serif", weights: ["400", "500", "700"] },
+  { id: "inconsolata", name: "Inconsolata", value: "'Inconsolata', monospace", weights: ["400", "500", "700"] },
+  { id: "jetbrains-mono", name: "JetBrains Mono", value: "'JetBrains Mono', monospace", weights: ["400", "500", "700"] },
+  { id: "josefin", name: "Josefin Sans", value: "'Josefin Sans', sans-serif", weights: ["400", "500", "700"] },
+  { id: "karla", name: "Karla", value: "'Karla', sans-serif", weights: ["400", "500", "700"] },
+  { id: "lato", name: "Lato", value: "'Lato', sans-serif", weights: ["400", "700", "900"] },
+  { id: "libre-baskerville", name: "Libre Baskerville", value: "'Libre Baskerville', serif", weights: ["400", "500", "700"] },
+  { id: "lora", name: "Lora", value: "'Lora', serif", weights: ["400", "500", "700"] },
+  { id: "merriweather", name: "Merriweather", value: "'Merriweather', serif", weights: ["400", "500", "700"] },
+  { id: "montserrat", name: "Montserrat", value: "'Montserrat', sans-serif", weights: ["400", "500", "700"] },
+  { id: "nunito", name: "Nunito", value: "'Nunito', sans-serif", weights: ["400", "500", "700"] },
+  { id: "open-sans", name: "Open Sans", value: "'Open Sans', sans-serif", weights: ["400", "500", "700"] },
+  { id: "overpass", name: "Overpass", value: "'Overpass', sans-serif", weights: ["400", "500", "700"] },
+  { id: "playfair", name: "Playfair Display", value: "'Playfair Display', serif", weights: ["400", "500", "700"] },
+  { id: "poppins", name: "Poppins", value: "'Poppins', sans-serif", weights: ["400", "500", "700"] },
+  { id: "quicksand", name: "Quicksand", value: "'Quicksand', sans-serif", weights: ["400", "500", "700"] },
+  { id: "raleway", name: "Raleway", value: "'Raleway', sans-serif", weights: ["400", "500", "700"] },
+  { id: "roboto", name: "Roboto", value: "'Roboto', sans-serif", weights: ["400", "500", "700"] },
+  { id: "rubik", name: "Rubik", value: "'Rubik', sans-serif", weights: ["400", "500", "700"] },
+  { id: "sora", name: "Sora", value: "'Sora', sans-serif", weights: ["400", "500", "700"] },
+  { id: "source-serif", name: "Source Serif 4", value: "'Source Serif 4', serif", weights: ["400", "500", "700"] },
+  { id: "space-grotesk", name: "Space Grotesk", value: "'Space Grotesk', sans-serif", weights: ["400", "500", "700"] },
+  { id: "work-sans", name: "Work Sans", value: "'Work Sans', sans-serif", weights: ["400", "500", "700"] },
 ];
 
 // ─── Button Styles ──────────────────────────────────────────────────────────

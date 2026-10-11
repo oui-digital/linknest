@@ -3,6 +3,7 @@ import type { blocks as blocksSchema, pages } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { PublicPageView } from "./public-page-view";
+import { resolveThemeFonts } from "@/lib/templates/font-loader";
 import type { RenderMode } from "./page-parts";
 import type { BlockRuntime } from "@/components/blocks/block-runtime";
 import type { InAppEscape } from "@/lib/in-app-browser";
@@ -23,8 +24,14 @@ interface TemplateRendererProps {
   inApp?: InAppEscape;
 }
 
-/** Server entry point: the public page and the dashboard preview route. */
-export function TemplateRenderer({
+/**
+ * Server entry point: the public page and the dashboard preview route.
+ *
+ * Async because the theme's Google fonts are resolved to self-hosted files
+ * here (src/lib/templates/font-loader.ts); the editor's client preview
+ * renders PublicPageView directly and keeps the Google stylesheet.
+ */
+export async function TemplateRenderer({
   page,
   blocks,
   showBadge = true,
@@ -38,12 +45,14 @@ export function TemplateRenderer({
     ...template.defaultTheme,
     ...(page.theme as Partial<ThemeTokens>),
   } as ThemeTokens;
+  const fonts = await resolveThemeFonts(theme);
 
   return (
     <PublicPageView
       page={page}
       blocks={blocks}
       theme={theme}
+      fonts={fonts}
       mode={mode}
       showBadge={showBadge}
       showReport={showReport}
