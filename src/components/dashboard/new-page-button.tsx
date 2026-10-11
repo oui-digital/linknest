@@ -7,9 +7,14 @@ import Link from "next/link";
 export function NewPageButton({
   workspaceId,
   canCreate,
+  publicHost,
 }: {
   workspaceId: string;
   canCreate: boolean;
+  /** Host shown before the handle, computed server-side from SITE_URL: only
+   *  NEXT_PUBLIC_* reaches client bundles, so previews would otherwise show
+   *  localhost here. */
+  publicHost: string;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -96,7 +101,7 @@ export function NewPageButton({
                   URL Slug
                 </label>
                 <div className="flex items-center rounded-lg border border-gray-200 px-3 py-2">
-                  <span className="text-sm text-gray-400">linknest.click/@</span>
+                  <span className="text-sm text-gray-400">{publicHost}/@</span>
                   <input
                     type="text"
                     value={slug}

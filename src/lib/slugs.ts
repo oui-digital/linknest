@@ -28,6 +28,10 @@ const SYSTEM_SLUGS = new Set([
   "_next",
   "static",
   "subscribe",
+  // Middleware rewrites app-route handles to /not-found, and /report/[pageId]
+  // is a real route; neither may be claimable as a handle.
+  "not-found",
+  "report",
 ]);
 
 // High-value slugs — reserved for future manual assignment or premium tiers.

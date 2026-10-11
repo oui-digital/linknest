@@ -1,5 +1,40 @@
 import { describe, it, expect } from "vitest";
-import { resolveSiteUrl } from "./site";
+import { publicPageUrlVariants, resolveSiteUrl, siteOriginVariants } from "./site";
+
+describe("siteOriginVariants", () => {
+  it("pairs a www origin with its apex, canonical first", () => {
+    expect(siteOriginVariants("https://www.linknest.click")).toEqual([
+      "https://www.linknest.click",
+      "https://linknest.click",
+    ]);
+  });
+
+  it("pairs an apex origin with its www form", () => {
+    expect(siteOriginVariants("https://linknest.click")).toEqual([
+      "https://linknest.click",
+      "https://www.linknest.click",
+    ]);
+  });
+
+  it("keeps the scheme and port", () => {
+    expect(siteOriginVariants("http://localhost:3000")).toEqual([
+      "http://localhost:3000",
+      "http://www.localhost:3000",
+    ]);
+  });
+});
+
+describe("publicPageUrlVariants", () => {
+  // Analytics events recorded before the www switch carry the apex URL.
+  it("covers both hosts with and without a trailing slash", () => {
+    const urls = publicPageUrlVariants("ouidigital", "https://www.linknest.click");
+    expect(urls).toHaveLength(4);
+    expect(urls).toContain("https://www.linknest.click/@ouidigital");
+    expect(urls).toContain("https://www.linknest.click/@ouidigital/");
+    expect(urls).toContain("https://linknest.click/@ouidigital");
+    expect(urls).toContain("https://linknest.click/@ouidigital/");
+  });
+});
 
 describe("resolveSiteUrl", () => {
   it("prefers the explicit public origin and strips a trailing slash", () => {

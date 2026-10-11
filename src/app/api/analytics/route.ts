@@ -6,7 +6,7 @@ import { blocks } from "@/lib/db/schema";
 import { getUserWorkspace, getWorkspacePages } from "@/lib/queries";
 import { getLimit, type PlanId } from "@/lib/entitlements";
 import { normalizeSlug } from "@/lib/slugs";
-import { SITE_URL } from "@/lib/site";
+import { publicPageUrlVariants } from "@/lib/site";
 import {
   DAILY_QUERY,
   SOCIAL_DESTINATIONS_QUERY,
@@ -100,12 +100,13 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Match the page's canonical URL exactly. "icontains /@<slug>" credited every
-  // view of @jordan and @jones to @jo, because a slug may be a prefix of
-  // another slug — so short-handle owners saw inflated counts and long-handle
-  // owners had their traffic double-counted into someone else's dashboard.
-  const canonicalUrl = `${SITE_URL}/@${slug}`;
-  const urls = [canonicalUrl, `${canonicalUrl}/`];
+  // Match the page's URL exactly. "icontains /@<slug>" credited every view of
+  // @jordan and @jones to @jo, because a slug may be a prefix of another slug
+  // — so short-handle owners saw inflated counts and long-handle owners had
+  // their traffic double-counted into someone else's dashboard. Both the www
+  // and apex spellings are listed: events stamped before the canonical host
+  // changed must keep counting.
+  const urls = publicPageUrlVariants(slug);
 
   // HogQL via /query/. The previous implementation posted to
   // /api/projects/:id/insights/trend/, which PostHog has retired.

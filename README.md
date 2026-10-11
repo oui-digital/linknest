@@ -47,8 +47,11 @@ Open http://localhost:3000.
 ## Architecture notes
 
 **Routing.** Middleware (`src/middleware.ts`) rewrites `/@slug` to `/slug`, which
-serves `src/app/(public)/[username]/page.tsx`, and 301s bare `/slug` back to the
-canonical `/@slug`. Build in-app links with `getPublicPageUrl()` from
+serves `src/app/(public)/[username]/page.tsx`, and 308s both bare `/slug` and
+mixed-case `/@Slug` to the lowercase canonical `/@slug`, query string intact. The
+canonical host is `www.linknest.click`; the apex redirects to it (308) in the
+Vercel domain settings, and `SITE_URL` (`src/lib/site.ts`) is the only origin
+the app emits. Build in-app links with `getPublicPageUrl()` from
 `src/lib/slugs.ts` so they never take that redirect. Slugs are stored normalized
 (lowercased, trimmed) — always write `normalizeSlug()` output, never raw input,
 because lookups are case-sensitive.
@@ -116,8 +119,15 @@ our own R2 assets (`isOwnAssetUrl()`).
 `SaveCoordinator` (`src/components/editor/save-coordinator.ts`) that merges
 edits per block or page field, keeps one request in flight per entity, and
 keeps a refused patch (flagged inline, with Retry) instead of rolling the field
-back. `PublishBar` awaits `flushAll()` and refuses to publish while anything is
-still unsaved or rejected.
+back. Writes that bypass it (theme, template, create, reorder, delete) are
+counted by `PendingOps`, so the publish bar's status covers every path.
+`PublishBar` awaits `flushAll()` and refuses to publish while anything is
+still unsaved or rejected. A live page has no "Update" step: saved edits are
+already live, and the bar shows `Live · Saved / Saving… / Changes not saved`.
+New blocks added to a live page start hidden (`is_visible=false`) until the
+owner clicks Show, so an addition never appears on the public URL mid-edit.
+Block positions (insert after, reorder) are written under the page row lock
+through `applyLiveEdit` (`src/lib/block-order.ts`).
 
 **Reconciliation.** `/api/cron/reconcile` (daily, see `vercel.json`) re-derives
 `workspaces.plan` from the canonical `subscriptions` table, enforces page limits
