@@ -35,11 +35,16 @@ function block(overrides: Partial<Block>): Block {
   } as Block;
 }
 
-function renderList(blocks: Block[], layout: "centered-stack" | "card-grid" = "centered-stack") {
+function renderList(
+  blocks: Block[],
+  layout: "centered-stack" | "card-grid" = "centered-stack",
+  counts: { days: number; blocks: Record<string, { clicks: number; plays: number }> } | null = null,
+) {
   const saves = new SaveCoordinator({ save: async () => ({ ok: true }) });
   const template = getTemplate(layout === "card-grid" ? "glass" : "clean-slate");
   const onBlocksChange = vi.fn();
-  render(
+  let editingId: string | null = null;
+  const tree = (id: string | null) => (
     <BlockList
       pageId="p1"
       blocks={blocks}
@@ -49,9 +54,16 @@ function renderList(blocks: Block[], layout: "centered-stack" | "card-grid" = "c
       layout={template.layout}
       saves={saves}
       ops={new PendingOps()}
+      editingId={id}
+      onEditingChange={(id) => {
+        editingId = id;
+        view.rerender(tree(id));
+      }}
+      counts={counts}
       onError={() => {}}
-    />,
+    />
   );
+  const view = render(tree(editingId));
   return { onBlocksChange, saves };
 }
 
@@ -94,5 +106,27 @@ describe("BlockList rows", () => {
     renderList([{ ...first, content: { description: long } }]);
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByText("Shows up to 2 lines on your page.")).toBeTruthy();
+  });
+});
+
+describe("BlockList click chips", () => {
+  it("shows clicks for links and plays for embeds only when data is present", () => {
+    const embed = block({ id: "00000000-0000-4000-8000-000000000003", position: 2, type: "embed", label: "Talk", url: "https://youtube.com/watch?v=x", content: { provider: "youtube", embedId: "x" } });
+    renderList([first, second, embed], "centered-stack", {
+      days: 7,
+      blocks: {
+        [first.id]: { clicks: 12, plays: 0 },
+        [second.id]: { clicks: 0, plays: 0 },
+        [embed.id]: { clicks: 0, plays: 3 },
+      },
+    });
+    expect(screen.getByText("12 clicks · 7d")).toBeTruthy();
+    expect(screen.getByText("0 clicks · 7d")).toBeTruthy();
+    expect(screen.getByText("3 plays · 7d")).toBeTruthy();
+  });
+
+  it("renders no chip at all without analytics data", () => {
+    renderList([first, second]);
+    expect(screen.queryByText(/clicks · /)).toBeNull();
   });
 });

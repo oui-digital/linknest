@@ -6,13 +6,14 @@ vi.mock("@/lib/queries", () => ({
   getUserWorkspace: async () => ({ id: "ws", plan: "free" }),
   getWorkspacePages: async () => [{ id: "page", slug: "qa" }],
 }));
+const pageBlocks: { id: string; type: string; label: string | null; url: string | null; isVisible: boolean; content: unknown }[] = [
+  { id: "b", type: "link", label: "Example", url: "https://example.com/", isVisible: true, content: {} },
+];
 vi.mock("@/lib/db", () => ({
   db: {
     select: () => ({
       from: () => ({
-        where: async () => [
-          { id: "b", type: "link", label: "Example", url: "https://example.com/", isVisible: true, content: {} },
-        ],
+        where: async () => pageBlocks,
       }),
     }),
   },
@@ -40,6 +41,9 @@ function fakePostHog() {
       const byDay = new Map<string, number>();
       for (const t of inWindow) byDay.set(t.slice(0, 10), (byDay.get(t.slice(0, 10)) ?? 0) + 1);
       results = [...byDay];
+    } else if (query.includes("block_id IN {blockIds}") && !query.includes("properties.url")) {
+      // Per-block counts: every id gets a row with its index as the count.
+      results = (values.blockIds as string[]).map((id, i) => [id, i, i % 2]);
     } else if (query.includes("countIf(")) {
       results = inWindow.length ? [["b", inWindow.length, 0, "Example"]] : [];
     }
@@ -51,6 +55,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  pageBlocks.splice(1);
 });
 
 describe("GET /api/analytics", () => {
@@ -75,5 +80,41 @@ describe("GET /api/analytics", () => {
         end: "2026-10-09 12:00:00",
       });
     }
+  });
+});
+
+describe("GET /api/analytics?view=blocks", () => {
+  // TOP_BLOCKS_QUERY cuts at 25; the editor needs every block, zero or not.
+  it("returns counts for all 60 blocks of a 60-block page", async () => {
+    vi.stubEnv("POSTHOG_PERSONAL_API_KEY", "qa-key");
+    vi.stubEnv("POSTHOG_PROJECT_ID", "qa-project");
+    vi.stubGlobal("fetch", fakePostHog());
+    for (let i = 1; i < 60; i++) {
+      pageBlocks.push({ id: `b${i}`, type: "link", label: null, url: null, isVisible: true, content: {} });
+    }
+
+    const res = await GET(new NextRequest("https://qa.example/api/analytics?slug=qa&days=90&view=blocks"));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.configured).toBe(true);
+    expect(data.days).toBe(7); // free plan: clamped
+    expect(Object.keys(data.blocks)).toHaveLength(60);
+    expect(data.blocks.b).toEqual({ clicks: 0, plays: 0 });
+    expect(data.blocks.b59).toEqual({ clicks: 59, plays: 1 });
+  });
+
+  it("is 404 for a slug the workspace does not own", async () => {
+    vi.stubEnv("POSTHOG_PERSONAL_API_KEY", "qa-key");
+    vi.stubEnv("POSTHOG_PROJECT_ID", "qa-project");
+    const res = await GET(new NextRequest("https://qa.example/api/analytics?slug=other&view=blocks"));
+    expect(res.status).toBe(404);
+  });
+
+  it("says so when analytics is not configured, with no counts", async () => {
+    const res = await GET(new NextRequest("https://qa.example/api/analytics?slug=qa&view=blocks"));
+    const data = await res.json();
+    expect(data.configured).toBe(false);
+    expect(data.blocks).toEqual({});
   });
 });

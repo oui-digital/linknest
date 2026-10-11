@@ -20,6 +20,8 @@ import { PublishBar } from "./publish-bar";
 import { MobilePreviewOverlay } from "./mobile-preview-overlay";
 import { useSaveCoordinator } from "./use-save-coordinator";
 import { usePendingOps } from "./use-pending-ops";
+import { getLimit } from "@/lib/entitlements";
+import type { BlockCountsResponse } from "@/app/api/analytics/route";
 import { persistPatch } from "./persist-patch";
 import type { SaveCoordinator, SaveEntity, SaveOutcome, SavePatch } from "./save-coordinator";
 import Link from "next/link";
@@ -43,6 +45,28 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
     "effective",
   );
   const [error, setError] = useState<string | null>(null);
+  // The block open for editing: the list opens it, the phone preview scrolls
+  // to it.
+  const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+
+  // Per-block clicks for the block list, fetched once: the prune decision
+  // lives in the editor, not only on the analytics page. Null until loaded
+  // and whenever analytics is unavailable, so no chip ever reads as zero.
+  const [counts, setCounts] = useState<{ days: number; blocks: BlockCountsResponse["blocks"] } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    const days = getLimit(plan, "analytics_days");
+    fetch(`/api/analytics?slug=${encodeURIComponent(page.slug)}&days=${days}&view=blocks`, {
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as BlockCountsResponse;
+        if (data.configured && !data.error) setCounts({ days: data.days, blocks: data.blocks });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [page.slug, plan]);
 
   // The banner had no lifetime: an error from one action stayed pinned while
   // the user moved on to unrelated work, so a stale message looked like a fresh
@@ -251,6 +275,9 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
                 layout={template.layout}
                 saves={saves}
                 ops={ops}
+                editingId={activeBlockId}
+                onEditingChange={setActiveBlockId}
+                counts={counts}
                 onError={setError}
               />
             )}
@@ -285,12 +312,12 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
 
         {/* Right panel — live preview */}
         <div className="hidden flex-1 items-center justify-center bg-gray-100 p-8 md:flex">
-          <LivePreview page={pageState} blocks={blocksState} theme={displayTheme} />
+          <LivePreview page={pageState} blocks={blocksState} theme={displayTheme} activeBlockId={activeBlockId} />
         </div>
       </main>
 
       {/* Mobile preview overlay */}
-      <MobilePreviewOverlay page={pageState} blocks={blocksState} theme={displayTheme} />
+      <MobilePreviewOverlay page={pageState} blocks={blocksState} theme={displayTheme} activeBlockId={activeBlockId} />
     </div>
   );
 }

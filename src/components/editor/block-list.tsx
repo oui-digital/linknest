@@ -34,6 +34,7 @@ import { gridPlacement, isGridLayout, sizeOptions, type BlockSize } from "@/lib/
 import { descriptionHint } from "@/lib/blocks/description-hint";
 import type { SaveCoordinator, SaveStatus } from "./save-coordinator";
 import type { PendingOps } from "./pending-ops";
+import type { BlockCounts } from "@/lib/analytics";
 import { ImageUpload } from "./image-upload";
 import { applyBlockEdit, restoreBlock } from "./block-edit";
 import { SocialsEditor } from "./socials-editor";
@@ -78,6 +79,11 @@ interface BlockListProps {
   saves: SaveCoordinator;
   /** Counts create, reorder and delete for the publish bar's status. */
   ops: PendingOps;
+  /** The block open for editing; the preview scrolls to it. */
+  editingId: string | null;
+  onEditingChange: (id: string | null) => void;
+  /** Clicks per block over `days`; null while loading or when analytics is unavailable. */
+  counts?: { days: number; blocks: BlockCounts } | null;
   onError: (message: string) => void;
 }
 
@@ -93,12 +99,15 @@ export function BlockList({
   layout,
   saves,
   ops,
+  editingId,
+  onEditingChange,
+  counts,
   onError,
 }: BlockListProps) {
   const [isAdding, setIsAdding] = useState(false);
-  // One block open for editing at a time, owned here so a freshly inserted
-  // block can be opened and scrolled to.
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // One block open for editing at a time, owned by the shell so the phone
+  // preview can scroll to it; a freshly inserted block is opened here.
+  const setEditingId = onEditingChange;
   const sorted = [...blocks].sort((a, b) => a.position - b.position);
 
   const sensors = useSensors(
@@ -196,7 +205,7 @@ export function BlockList({
         setIsAdding(false);
       }
     },
-    [pageId, ops, onBlocksChange, onError],
+    [pageId, ops, onBlocksChange, onError, setEditingId],
   );
 
   const handleUpdateBlock = useCallback(
@@ -320,7 +329,8 @@ export function BlockList({
                 isFirst={index === 0}
                 isLast={index === sorted.length - 1}
                 isEditing={editingId === block.id}
-                onToggleEdit={() => setEditingId((id) => (id === block.id ? null : block.id))}
+                onToggleEdit={() => setEditingId(editingId === block.id ? null : block.id)}
+                count={counts ? { days: counts.days, ...(counts.blocks[block.id] ?? null) } : null}
                 plan={plan}
                 theme={theme}
                 layout={layout}
@@ -440,6 +450,7 @@ function SortableBlockItem({
   isLast,
   isEditing,
   onToggleEdit,
+  count,
   plan,
   theme,
   layout,
@@ -456,6 +467,8 @@ function SortableBlockItem({
   isLast: boolean;
   isEditing: boolean;
   onToggleEdit: () => void;
+  /** Clicks/plays over `days`; null when analytics is unavailable. */
+  count: { days: number; clicks?: number; plays?: number } | null;
   plan: "free" | "pro";
   theme: ThemeTokens;
   layout: LayoutType;
@@ -570,6 +583,21 @@ function SortableBlockItem({
 
         {/* Label */}
         <span className="flex-1 truncate text-sm">{displayLabel}</span>
+
+        {/* Clicks over the plan's window: the prune decision. Rendered only
+            with data, so an absent chip never reads as zero. Embeds count
+            play-button presses, a different event from outbound clicks. */}
+        {count && count.clicks !== undefined && count.plays !== undefined && (
+          block.type === "embed" ? (
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500" title={`Play-button presses in the last ${count.days} days`}>
+              {count.plays} {count.plays === 1 ? "play" : "plays"} · {count.days}d
+            </span>
+          ) : (block.type === "link" || block.type === "socials") ? (
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500" title={`Clicks in the last ${count.days} days`}>
+              {count.clicks} {count.clicks === 1 ? "click" : "clicks"} · {count.days}d
+            </span>
+          ) : null
+        )}
 
         {/* A block added to a live page starts hidden (createBlock). Say so,
             and offer the one click that puts it on the page. */}
