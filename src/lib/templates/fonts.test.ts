@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getGoogleFontsUrl } from "./fonts";
 import { GOOGLE_FONTS } from "./theme";
+import { SELF_HOSTED_FONT_IDS } from "./font-loader";
 
 describe("getGoogleFontsUrl", () => {
   it("returns null when only system fonts are used", () => {
@@ -34,16 +35,16 @@ describe("getGoogleFontsUrl", () => {
 describe("self-hosted font modules", () => {
   const dir = join(process.cwd(), "src/lib/templates/google-fonts");
 
-  it("exist for every Google font and repeat the shared weights literally", () => {
-    const files = new Set(readdirSync(dir));
-    for (const font of GOOGLE_FONTS) {
-      expect(files.has(`${font.id}.ts`), font.id).toBe(true);
-      const source = readFileSync(join(dir, `${font.id}.ts`), "utf8");
+  it("exist for exactly the self-hosted families and repeat the shared weights literally", () => {
+    const files = readdirSync(dir).filter((f) => f.endsWith(".ts"));
+    expect(files.sort()).toEqual([...SELF_HOSTED_FONT_IDS].map((id) => `${id}.ts`).sort());
+    for (const id of SELF_HOSTED_FONT_IDS) {
+      const font = GOOGLE_FONTS.find((f) => f.id === id)!;
+      const source = readFileSync(join(dir, `${id}.ts`), "utf8");
       const literal = JSON.stringify(font.weights).replace(/,/g, ", ");
-      expect(source, font.id).toContain(`weight: ${literal},`);
-      expect(source, font.id).toContain(`export const WEIGHTS = ${literal} as const;`);
-      expect(source, font.id).toContain(`import { ${font.name.replace(/ /g, "_")} } from "next/font/google";`);
+      expect(source, id).toContain(`weight: ${literal},`);
+      expect(source, id).toContain(`export const WEIGHTS = ${literal} as const;`);
+      expect(source, id).toContain(`import { ${font.name.replace(/ /g, "_")} } from "next/font/google";`);
     }
-    expect(files.size).toBe(GOOGLE_FONTS.length);
   });
 });

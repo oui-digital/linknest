@@ -7,13 +7,10 @@ import type { LoadedFont, ResolvedFonts } from "./font-types";
  *
  * Pro pages could pick from 30 Google families, loaded through a
  * render-blocking, cross-origin stylesheet from fonts.googleapis.com. The
- * families are now served from this deployment through next/font: one module
- * per family under ./google-fonts, imported on demand through the static
- * switch below, so a page only carries the CSS of the families it uses.
- *
- * The editor's phone frame is a client component and keeps the stylesheet
- * path (`getGoogleFontsUrl`); `remoteUrl` also covers any family that is not
- * self-hosted yet.
+ * families in SELF_HOSTED_FONT_IDS are served from this deployment through
+ * next/font (one module each under ./google-fonts); the rest still come from
+ * Google through `remoteUrl`, as does everything in the editor's client
+ * preview (`getGoogleFontsUrl`).
  */
 
 export type { LoadedFont, ResolvedFonts } from "./font-types";
@@ -50,70 +47,26 @@ export function googleFontId(value: string | undefined): string | null {
   return GOOGLE_FONTS.find((font) => font.value === value)?.id ?? null;
 }
 
+/**
+ * Families served from this deployment. Only these have a module under
+ * ./google-fonts; every other GOOGLE_FONTS family stays on the Google
+ * stylesheet.
+ *
+ * Deliberately short. Next collects the CSS of every font module reachable
+ * from the route, dynamic imports included: with all 30 families hosted, a
+ * public page using Sora (or system fonts) rendered 31 stylesheet links. One
+ * hosted family costs every public page one small extra stylesheet; add a
+ * family only when published pages use it, and re-check the rendered <link>
+ * elements and network requests of a system-font page afterwards.
+ */
+export const SELF_HOSTED_FONT_IDS = ["sora"] as const;
+
 // A static switch, not a template-string import: next/font must see every
 // module as a literal import to self-host it at build time.
 async function importFont(id: string): Promise<FontModule | null> {
   switch (id) {
-    case "archivo":
-      return await import("./google-fonts/archivo");
-    case "barlow":
-      return await import("./google-fonts/barlow");
-    case "bitter":
-      return await import("./google-fonts/bitter");
-    case "cabin":
-      return await import("./google-fonts/cabin");
-    case "crimson-text":
-      return await import("./google-fonts/crimson-text");
-    case "dm-sans":
-      return await import("./google-fonts/dm-sans");
-    case "dm-serif":
-      return await import("./google-fonts/dm-serif");
-    case "fira-sans":
-      return await import("./google-fonts/fira-sans");
-    case "inconsolata":
-      return await import("./google-fonts/inconsolata");
-    case "jetbrains-mono":
-      return await import("./google-fonts/jetbrains-mono");
-    case "josefin":
-      return await import("./google-fonts/josefin");
-    case "karla":
-      return await import("./google-fonts/karla");
-    case "lato":
-      return await import("./google-fonts/lato");
-    case "libre-baskerville":
-      return await import("./google-fonts/libre-baskerville");
-    case "lora":
-      return await import("./google-fonts/lora");
-    case "merriweather":
-      return await import("./google-fonts/merriweather");
-    case "montserrat":
-      return await import("./google-fonts/montserrat");
-    case "nunito":
-      return await import("./google-fonts/nunito");
-    case "open-sans":
-      return await import("./google-fonts/open-sans");
-    case "overpass":
-      return await import("./google-fonts/overpass");
-    case "playfair":
-      return await import("./google-fonts/playfair");
-    case "poppins":
-      return await import("./google-fonts/poppins");
-    case "quicksand":
-      return await import("./google-fonts/quicksand");
-    case "raleway":
-      return await import("./google-fonts/raleway");
-    case "roboto":
-      return await import("./google-fonts/roboto");
-    case "rubik":
-      return await import("./google-fonts/rubik");
     case "sora":
       return await import("./google-fonts/sora");
-    case "source-serif":
-      return await import("./google-fonts/source-serif");
-    case "space-grotesk":
-      return await import("./google-fonts/space-grotesk");
-    case "work-sans":
-      return await import("./google-fonts/work-sans");
     default:
       return null;
   }

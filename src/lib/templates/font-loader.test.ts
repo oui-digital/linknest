@@ -6,9 +6,6 @@ vi.mock("./google-fonts/sora", () => ({
   WEIGHTS: ["400", "500", "700"],
   font: { className: "sora_x", style: { fontFamily: "'__Sora_x', '__Sora_Fallback_x'" } },
 }));
-vi.mock("./google-fonts/lato", () => {
-  throw new Error("Lato is not self-hosted in this test");
-});
 
 import { genericFamily, googleFontId, resolveThemeFonts } from "./font-loader";
 
@@ -20,11 +17,13 @@ describe("resolveThemeFonts", () => {
     expect(fonts.remoteUrl).toBeNull();
   });
 
-  it("surfaces a family whose module fails to load instead of serving the wrong font", async () => {
-    const fonts = await resolveThemeFonts({ fontHeading: "'Lato', sans-serif" }).catch(() => null);
-    // A missing module is a build-time error, not a runtime one; the loader
-    // surfaces it rather than silently serving the wrong font.
-    expect(fonts).toBeNull();
+  it("falls back to the Google stylesheet for a family that is not self-hosted", async () => {
+    const fonts = await resolveThemeFonts({ fontHeading: "'Lato', sans-serif", fontBody: "'Sora', sans-serif" });
+    expect(fonts.heading).toBeNull();
+    expect(fonts.body?.className).toBe("sora_x");
+    expect(fonts.remoteUrl).toBe(
+      "https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap",
+    );
   });
 
   it("requests nothing for system fonts", async () => {

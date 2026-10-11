@@ -82,13 +82,15 @@ merged theme — doing so shadows every future template switch. Tokens become CS
 custom properties, so `updateTheme` validates them against a closed schema
 (values reach a `style` attribute, where a stray `;` injects declarations).
 
-**Template fonts.** The Pro Google families are self-hosted through
-`next/font`: one module per family under `src/lib/templates/google-fonts/`,
-imported on demand by `resolveThemeFonts` (`src/lib/templates/font-loader.ts`)
-from the server renderer, so the public page carries no cross-origin
-stylesheet. `GOOGLE_FONTS[].weights` is the one weight list; the modules repeat
-it literally (next/font needs literals) and a test keeps them equal. The
-editor's client preview still loads the Google stylesheet.
+**Template fonts.** The families in `SELF_HOSTED_FONT_IDS`
+(`src/lib/templates/font-loader.ts`) are self-hosted through `next/font`, one
+module each under `src/lib/templates/google-fonts/`; the other Pro Google
+families still load from the Google stylesheet, as does everything in the
+editor's client preview. Keep the hosted list short: Next attaches the CSS of
+every font module reachable from the route, dynamic imports included, so each
+hosted family adds one small stylesheet to every public page. `GOOGLE_FONTS[].weights`
+is the one weight list; the modules repeat it literally (next/font needs
+literals) and a test keeps them equal.
 
 **Entitlements.** `src/lib/entitlements.ts` is the single source of plan limits;
 `src/lib/pricing.ts` derives customer-facing copy from it so marketing cannot
