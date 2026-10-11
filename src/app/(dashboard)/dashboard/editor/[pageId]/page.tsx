@@ -5,6 +5,7 @@ import { pages, blocks } from "@/lib/db/schema";
 import { eq, asc, and } from "drizzle-orm";
 import { getUserWorkspace } from "@/lib/queries";
 import { EditorShell } from "@/components/editor/editor-shell";
+import { SITE_URL } from "@/lib/site";
 
 export default async function EditorPage({
   params,
@@ -44,6 +45,7 @@ export default async function EditorPage({
       page={page}
       initialBlocks={pageBlocks}
       plan={workspace.plan as "free" | "pro"}
+      publicHost={new URL(SITE_URL).host}
     />
   );
 }

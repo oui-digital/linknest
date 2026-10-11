@@ -47,8 +47,11 @@ Open http://localhost:3000.
 ## Architecture notes
 
 **Routing.** Middleware (`src/middleware.ts`) rewrites `/@slug` to `/slug`, which
-serves `src/app/(public)/[username]/page.tsx`, and 301s bare `/slug` back to the
-canonical `/@slug`. Build in-app links with `getPublicPageUrl()` from
+serves `src/app/(public)/[username]/page.tsx`, and 308s both bare `/slug` and
+mixed-case `/@Slug` to the lowercase canonical `/@slug`, query string intact. The
+canonical host is `www.linknest.click`; the apex redirects to it (308) in the
+Vercel domain settings, and `SITE_URL` (`src/lib/site.ts`) is the only origin
+the app emits. Build in-app links with `getPublicPageUrl()` from
 `src/lib/slugs.ts` so they never take that redirect. Slugs are stored normalized
 (lowercased, trimmed) — always write `normalizeSlug()` output, never raw input,
 because lookups are case-sensitive.
