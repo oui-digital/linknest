@@ -8,6 +8,8 @@ import * as Sentry from "@sentry/nextjs";
 import { publishPage, unpublishPage } from "@/lib/actions/page";
 import { getPublicPageUrl } from "@/lib/slugs";
 import type { SaveCoordinator } from "./save-coordinator";
+import type { PendingOps } from "./pending-ops";
+import { PUBLISH_STATUS_LABEL, publishStatus } from "./publish-status";
 import { ShareModal } from "./share-modal";
 
 type Page = InferSelectModel<typeof pages>;
@@ -15,11 +17,13 @@ type Page = InferSelectModel<typeof pages>;
 interface PublishBarProps {
   page: Page;
   saves: SaveCoordinator;
+  /** Direct server actions (theme, template, create, reorder, delete). */
+  ops: PendingOps;
   onPageChange: (updates: Partial<Page>) => void;
   onError: (message: string) => void;
 }
 
-export function PublishBar({ page, saves, onPageChange, onError }: PublishBarProps) {
+export function PublishBar({ page, saves, ops, onPageChange, onError }: PublishBarProps) {
   const router = useRouter();
   const [isPublishing, setIsPublishing] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -110,6 +114,16 @@ export function PublishBar({ page, saves, onPageChange, onError }: PublishBarPro
 
   const blocked = saves.hasFailed();
 
+  // A live page has no Update step: every saved edit is already on it. The
+  // old "Update" button re-ran publish and changed nothing visible, so the
+  // bar now states what is true, across every write path.
+  const status = publishStatus({
+    unsaved: saves.hasUnsaved(),
+    holding: saves.isHolding(),
+    pendingOps: ops.pending,
+    failed: saves.hasFailed() || ops.failed,
+  });
+
   return (
     <>
       <div className="flex items-center gap-3">
@@ -145,18 +159,31 @@ export function PublishBar({ page, saves, onPageChange, onError }: PublishBarPro
             </button>
           </>
         )}
-        <button
-          onClick={handlePublish}
-          disabled={isPublishing || blocked}
-          title={blocked ? "A change could not be saved. Fix it before publishing." : undefined}
-          className="rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
-        >
-          {isPublishing
-            ? "Publishing..."
-            : page.isPublished
-              ? "Update"
-              : "Publish"}
-        </button>
+        {page.isPublished ? (
+          <span
+            role="status"
+            aria-live="polite"
+            data-status={status}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+              status === "failed"
+                ? "bg-red-50 text-red-700"
+                : status === "saving"
+                  ? "bg-amber-50 text-amber-800"
+                  : "bg-green-50 text-green-700"
+            }`}
+          >
+            {PUBLISH_STATUS_LABEL[status]}
+          </span>
+        ) : (
+          <button
+            onClick={handlePublish}
+            disabled={isPublishing || blocked}
+            title={blocked ? "A change could not be saved. Fix it before publishing." : undefined}
+            className="rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
+          >
+            {isPublishing ? "Publishing..." : "Publish"}
+          </button>
+        )}
       </div>
 
       <ShareModal

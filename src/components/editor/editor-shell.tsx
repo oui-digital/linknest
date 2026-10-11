@@ -19,6 +19,7 @@ import { LivePreview } from "./live-preview";
 import { PublishBar } from "./publish-bar";
 import { MobilePreviewOverlay } from "./mobile-preview-overlay";
 import { useSaveCoordinator } from "./use-save-coordinator";
+import { usePendingOps } from "./use-pending-ops";
 import { persistPatch } from "./persist-patch";
 import type { SaveCoordinator, SaveEntity, SaveOutcome, SavePatch } from "./save-coordinator";
 import Link from "next/link";
@@ -89,6 +90,9 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
   useEffect(() => {
     savesRef.current = saves;
   }, [saves]);
+  // Direct server actions (theme, template, create, reorder, delete) are
+  // counted here so the publish bar's status covers them too.
+  const ops = usePendingOps();
 
   // Derive theme from pageState — single source of truth (no separate theme state)
   const template = useMemo(
@@ -123,7 +127,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
       const newOverrides = { ...userOverrides, ...updates };
       setPageState((p) => ({ ...p, theme: newOverrides as Record<string, unknown> }));
       try {
-        const result = await saveTheme(pageState.id, updates);
+        const result = await ops.track(saveTheme(pageState.id, updates));
         if (result?.error) {
           setPageState(prev);
           setError(result.error);
@@ -133,7 +137,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
         setError("Couldn't save your style change. Please try again.");
       }
     },
-    [pageState, userOverrides],
+    [pageState, userOverrides, ops],
   );
 
   const handleTemplateChange = useCallback(
@@ -141,7 +145,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
       const prev = pageState;
       setPageState((p) => ({ ...p, templateId }));
       try {
-        const result = await updatePage({ pageId: pageState.id, templateId });
+        const result = await ops.track(updatePage({ pageId: pageState.id, templateId }));
         if (result?.error) {
           setPageState(prev);
           setError(result.error);
@@ -151,14 +155,14 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
         setError("Couldn't switch template. Please try again.");
       }
     },
-    [pageState],
+    [pageState, ops],
   );
 
   const handleResetOverrides = useCallback(async () => {
     const prev = pageState;
     setPageState((p) => ({ ...p, theme: {} as Record<string, unknown> }));
     try {
-      const result = await resetTheme(pageState.id);
+      const result = await ops.track(resetTheme(pageState.id));
       if (result?.error) {
         setPageState(prev);
         setError(result.error);
@@ -167,7 +171,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
       setPageState(prev);
       setError("Couldn't reset your theme. Please try again.");
     }
-  }, [pageState]);
+  }, [pageState, ops]);
 
   const handleBlocksUpdate = useCallback((newBlocks: Block[]) => {
     setBlocksState(newBlocks);
@@ -189,6 +193,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
         <PublishBar
           page={pageState}
           saves={saves}
+          ops={ops}
           onPageChange={handlePageUpdate}
           onError={setError}
         />
@@ -245,6 +250,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
                 theme={theme}
                 layout={template.layout}
                 saves={saves}
+                ops={ops}
                 onError={setError}
               />
             )}

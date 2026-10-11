@@ -205,6 +205,21 @@ function resolveBlockStyle(
   return Object.keys(style).length > 0 ? (style as React.CSSProperties) : undefined;
 }
 
+// Editor preview only: a hidden block is dimmed and tagged, never dropped.
+const HIDDEN_PREVIEW_CLASS =
+  "relative rounded-lg opacity-50 outline-1 outline-dashed outline-current outline-offset-4";
+
+function HiddenTag() {
+  return (
+    <span
+      className="pointer-events-none absolute -top-2.5 left-2 rounded bg-current px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+      aria-hidden="true"
+    >
+      <span style={{ color: "var(--ln-color-bg)" }}>Hidden</span>
+    </span>
+  );
+}
+
 export function BlockLayout({
   layout,
   blocks,
@@ -217,9 +232,11 @@ export function BlockLayout({
   mode: RenderMode;
 }) {
   // Hidden blocks are dropped before any wrapper is created, so they can never
-  // leave an empty slot (the editor preview receives every block).
+  // leave an empty slot. The editor preview keeps them, dimmed and tagged:
+  // new blocks on a live page start hidden, and the owner must be able to see
+  // what they are editing. The public loader never sends hidden rows at all.
   const visible = blocks
-    .filter((block) => block.isVisible)
+    .filter((block) => block.isVisible || mode === "preview")
     .sort((a, b) => a.position - b.position);
 
   if (isGridLayout(layout)) {
@@ -234,7 +251,11 @@ export function BlockLayout({
         {visible.map((block) => {
           const placement = gridPlacement(block, layout);
           return (
-            <div key={block.id} className={`flex min-w-0 ${placement.className}`}>
+            <div
+              key={block.id}
+              className={`flex min-w-0 ${placement.className}${block.isVisible ? "" : ` ${HIDDEN_PREVIEW_CLASS}`}`}
+            >
+              {!block.isVisible && <HiddenTag />}
               <BlockRenderer
                 block={block}
                 mode={mode}
@@ -258,14 +279,27 @@ export function BlockLayout({
         ["--ln-justify" as string]: layout === "left-aligned" ? "flex-start" : "center",
       } as React.CSSProperties}
     >
-      {visible.map((block) => (
-        <BlockRenderer
-          key={block.id}
-          block={block}
-          mode={mode}
-          resolvedStyle={resolveBlockStyle(theme, block)}
-        />
-      ))}
+      {visible.map((block) =>
+        block.isVisible ? (
+          <BlockRenderer
+            key={block.id}
+            block={block}
+            mode={mode}
+            resolvedStyle={resolveBlockStyle(theme, block)}
+          />
+        ) : (
+          // Preview only: public markup gets no wrapper (a renderer that
+          // returns null would otherwise leave an empty flex item and a gap).
+          <div key={block.id} className={`w-full ${HIDDEN_PREVIEW_CLASS}`}>
+            <HiddenTag />
+            <BlockRenderer
+              block={block}
+              mode={mode}
+              resolvedStyle={resolveBlockStyle(theme, block)}
+            />
+          </div>
+        ),
+      )}
     </div>
   );
 }
