@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getUserWorkspace, getWorkspacePages } from "@/lib/queries";
 import { getPublicPageUrl } from "@/lib/slugs";
+import { SITE_URL } from "@/lib/site";
 import { getLimit } from "@/lib/entitlements";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { AnalyticsCard } from "@/components/dashboard/analytics-card";
@@ -61,6 +62,7 @@ export default async function DashboardPage() {
           <NewPageButton
             workspaceId={workspace.id}
             canCreate={canCreatePage}
+            publicHost={new URL(SITE_URL).host}
           />
         </div>
 
@@ -74,7 +76,7 @@ export default async function DashboardPage() {
               <div>
                 <h3 className="font-medium">{page.title}</h3>
                 <p className="mt-1 text-sm text-gray-500">
-                  linknest.click{getPublicPageUrl(page.slug)}
+                  {new URL(SITE_URL).host}{getPublicPageUrl(page.slug)}
                 </p>
                 <span
                   className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${page.isPublished

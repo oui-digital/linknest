@@ -22,6 +22,8 @@ interface PageSettingsProps {
   plan: "free" | "pro";
   theme: ThemeTokens;
   saves: SaveCoordinator;
+  /** Host of the public URL, resolved server-side from SITE_URL. */
+  publicHost: string;
   onPageChange: (updates: Partial<Page>) => void;
   onThemeChange: (updates: Partial<ThemeTokens>) => void;
   onError: (message: string) => void;
@@ -32,6 +34,7 @@ export function PageSettings({
   plan,
   theme,
   saves,
+  publicHost,
   onPageChange,
   onThemeChange,
   onError,
@@ -323,7 +326,7 @@ export function PageSettings({
       <section>
         <h3 className="mb-3 text-sm font-semibold">Public URL</h3>
         <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-          <span className="text-sm text-gray-500">linknest.click/@{page.slug}</span>
+          <span className="text-sm text-gray-500">{publicHost}/@{page.slug}</span>
           <button
             onClick={() => {
               navigator.clipboard.writeText(

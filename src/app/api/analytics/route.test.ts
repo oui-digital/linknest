@@ -17,7 +17,14 @@ vi.mock("@/lib/db", () => ({
     }),
   },
 }));
-vi.mock("@/lib/site", () => ({ SITE_URL: "https://qa.example" }));
+vi.mock("@/lib/site", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/site")>();
+  return {
+    ...actual,
+    SITE_URL: "https://qa.example",
+    publicPageUrlVariants: (slug: string) => actual.publicPageUrlVariants(slug, "https://qa.example"),
+  };
+});
 
 import { GET } from "./route";
 
@@ -74,6 +81,25 @@ describe("GET /api/analytics", () => {
         start: "2026-10-03 00:00:00",
         end: "2026-10-09 12:00:00",
       });
+    }
+  });
+
+  // The canonical host moved from the apex to www; events recorded under the
+  // old host must still be counted, so the filter lists both spellings.
+  it("matches the page URL under both the www and apex hosts", async () => {
+    vi.stubEnv("POSTHOG_PERSONAL_API_KEY", "qa-key");
+    vi.stubEnv("POSTHOG_PROJECT_ID", "qa-project");
+    const fetchMock = fakePostHog();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await GET(new NextRequest("https://qa.example/api/analytics?slug=qa&days=7"));
+
+    expect(fetchMock).toHaveBeenCalled();
+    for (const [, init] of fetchMock.mock.calls) {
+      const { urls } = JSON.parse(String(init.body)).query.values;
+      expect(urls).toContain("https://qa.example/@qa");
+      expect(urls).toContain("https://www.qa.example/@qa");
+      expect(urls).toContain("https://qa.example/@qa/");
     }
   });
 });

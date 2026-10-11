@@ -30,9 +30,11 @@ interface EditorShellProps {
   page: Page;
   initialBlocks: Block[];
   plan: "free" | "pro";
+  /** Host of the public URL, resolved server-side from SITE_URL. */
+  publicHost: string;
 }
 
-export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
+export function EditorShell({ page, initialBlocks, plan, publicHost }: EditorShellProps) {
   const [pageState, setPageState] = useState(page);
   const [blocksState, setBlocksState] = useState(initialBlocks);
   const [activeTab, setActiveTab] = useState<"blocks" | "style" | "settings">(
@@ -269,6 +271,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
                 plan={plan}
                 theme={theme}
                 saves={saves}
+                publicHost={publicHost}
                 onPageChange={handlePageUpdate}
                 onThemeChange={handleThemeUpdate}
                 onError={setError}

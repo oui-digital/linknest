@@ -56,3 +56,25 @@ export const SITE_URL = resolveSiteUrl({
 export function absoluteUrl(path: string): string {
   return `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
+
+/**
+ * The origin and its www/apex twin, canonical first.
+ *
+ * Production moved from the apex to www as its canonical host. Everything that
+ * *emits* a URL uses SITE_URL alone; anything that *matches* URLs recorded
+ * earlier (analytics filters on `$current_url`) must accept both spellings or
+ * every event stamped before the switch silently drops out of the dashboard.
+ */
+export function siteOriginVariants(origin: string = SITE_URL): string[] {
+  const canonical = new URL(origin);
+  const twin = new URL(origin);
+  twin.hostname = canonical.hostname.startsWith("www.")
+    ? canonical.hostname.slice(4)
+    : `www.${canonical.hostname}`;
+  return [canonical.origin, twin.origin];
+}
+
+/** Every absolute URL a visitor may have recorded for a public page. */
+export function publicPageUrlVariants(slug: string, origin: string = SITE_URL): string[] {
+  return siteOriginVariants(origin).flatMap((o) => [`${o}/@${slug}`, `${o}/@${slug}/`]);
+}
