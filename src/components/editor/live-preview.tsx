@@ -40,22 +40,32 @@ export function LivePreview({ page, blocks, theme, activeBlockId }: LivePreviewP
     );
     if (!target) return;
 
-    const top =
-      target.getBoundingClientRect().top -
-      frame.getBoundingClientRect().top +
-      frame.scrollTop -
-      (frame.clientHeight - target.offsetHeight) / 2;
+    // One coordinate system. The mobile overlay scales the phone (0.85), so
+    // getBoundingClientRect() distances are scaled while scrollTop,
+    // clientHeight and offsetHeight are layout pixels; mixing them put low
+    // blocks near the bottom of the frame instead of its centre. The frame's
+    // own rect against its layout height gives the scale to divide out.
+    const frameRect = frame.getBoundingClientRect();
+    const scale = frame.clientHeight > 0 && frameRect.height > 0 ? frameRect.height / frame.clientHeight : 1;
+    const distance = (target.getBoundingClientRect().top - frameRect.top) / scale;
+    const top = distance + frame.scrollTop - (frame.clientHeight - target.offsetHeight) / 2;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     frame.scrollTo({ top: Math.max(0, top), behavior: reduceMotion ? "auto" : "smooth" });
 
     const previous = { outline: target.style.outline, outlineOffset: target.style.outlineOffset };
-    target.style.outline = "2px solid currentColor";
-    target.style.outlineOffset = "4px";
-    const timer = setTimeout(() => {
+    const restore = () => {
       target.style.outline = previous.outline;
       target.style.outlineOffset = previous.outlineOffset;
-    }, HIGHLIGHT_MS);
-    return () => clearTimeout(timer);
+    };
+    target.style.outline = "2px solid currentColor";
+    target.style.outlineOffset = "4px";
+    const timer = setTimeout(restore, HIGHLIGHT_MS);
+    // Switching blocks before the timer fires used to leave the first outline
+    // on for good: the cleanup cancelled the timer and nothing else.
+    return () => {
+      clearTimeout(timer);
+      restore();
+    };
   }, [activeBlockId]);
 
   return (

@@ -52,6 +52,32 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("LivePreview scroll-to-block", () => {
+  // QA regression: the first block kept its outline for good.
+  it("clears the previous highlight when switching blocks before 1.2 seconds", () => {
+    vi.useFakeTimers();
+    const view = render(<LivePreview page={page} blocks={blocks} theme={theme} activeBlockId="b7" />);
+    const first = document.querySelector('[data-block-id="b7"]') as HTMLElement;
+    expect(first.style.outline).toContain("2px solid");
+    act(() => view.rerender(<LivePreview page={page} blocks={blocks} theme={theme} activeBlockId="b2" />));
+    act(() => vi.advanceTimersByTime(2000));
+    vi.useRealTimers();
+    expect(first.style.outline).toBe("");
+  });
+
+  // QA regression: the mobile overlay scales the phone to 0.85, so rect
+  // distances are scaled while scrollTop and heights are not.
+  it("centers a target inside the mobile overlay scaled to 0.85", () => {
+    const view = render(<LivePreview page={page} blocks={blocks} theme={theme} activeBlockId={null} />);
+    const target = document.querySelector('[data-block-id="b7"]') as HTMLElement;
+    const frame = view.container.querySelector(".overflow-y-auto") as HTMLElement;
+    Object.defineProperty(frame, "clientHeight", { value: 684 });
+    Object.defineProperty(target, "offsetHeight", { value: 100 });
+    frame.getBoundingClientRect = () => ({ top: 100, height: 684 * 0.85 }) as DOMRect;
+    target.getBoundingClientRect = () => ({ top: 100 + 2000 * 0.85, height: 85 }) as DOMRect;
+    act(() => view.rerender(<LivePreview page={page} blocks={blocks} theme={theme} activeBlockId="b7" />));
+    expect(frameScrollTo).toHaveBeenLastCalledWith({ top: 2000 - (684 - 100) / 2, behavior: "smooth" });
+  });
+
   it("scrolls the phone frame, never an ancestor, when a block is being edited", () => {
     const view = render(<LivePreview page={page} blocks={blocks} theme={theme} activeBlockId={null} />);
     expect(frameScrollTo).not.toHaveBeenCalled();
