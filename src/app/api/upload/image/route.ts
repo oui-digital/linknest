@@ -4,6 +4,7 @@ import { getUserWorkspace } from "@/lib/queries";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import { type PlanId } from "@/lib/entitlements";
 import { storageUsage, storeImage } from "@/lib/uploads";
+import { UPLOAD_TYPES, type UploadType } from "@/lib/image-processing";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -77,9 +78,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate type field ("avatar", "thumbnail" or omitted)
+    // Validate type field (one of UPLOAD_TYPES, or omitted)
     const typeField = formData.get("type") as string | null;
-    if (typeField && typeField !== "avatar" && typeField !== "thumbnail") {
+    if (typeField && !(UPLOAD_TYPES as readonly string[]).includes(typeField)) {
       return NextResponse.json(
         { error: "Invalid type" },
         { status: 400 },
@@ -90,12 +91,12 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Re-encode (avatar → 512x512, thumbnail → 160x160, default → max 1200px),
-    // store in R2 and record the asset so the quota above can see it.
+    // Re-encode per preset (see src/lib/image-processing.ts), store in R2 and
+    // record the asset so the quota above can see it.
     const url = await storeImage({
       workspaceId: workspace.id,
       buffer,
-      type: (typeField ?? undefined) as "avatar" | "thumbnail" | undefined,
+      type: (typeField ?? undefined) as UploadType | undefined,
       filename: file.name,
     });
 

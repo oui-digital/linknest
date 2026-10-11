@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  experimental: {
+    // Two root layouts (the site, and public pages with a per-page <html
+    // lang>) leave no layout to compose a global 404 from; this renders
+    // src/app/global-not-found.tsx for unmatched URLs instead.
+    globalNotFound: true,
+  },
 };
 
 export default withSentryConfig(nextConfig, {

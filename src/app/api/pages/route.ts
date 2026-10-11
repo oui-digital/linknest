@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getUserWorkspace, getWorkspacePages } from "@/lib/queries";
-import { getLimit } from "@/lib/entitlements";
+import { getUserWorkspace } from "@/lib/queries";
 import { validateSlug, isReservedSlug, normalizeSlug } from "@/lib/slugs";
 import { isSlugTaken } from "@/lib/queries";
 import { db } from "@/lib/db";
-import { pages } from "@/lib/db/schema";
+import { insertPageInWorkspace } from "@/lib/page-create";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -18,7 +17,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No workspace" }, { status: 400 });
   }
 
-  const plan = workspace.plan as "free" | "pro";
   const { title, slug } = (await request.json()) as {
     title?: unknown;
     slug?: unknown;
@@ -58,29 +56,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check page limit
-  const existingPages = await getWorkspacePages(workspace.id);
-  const maxPages = getLimit(plan, "max_pages");
-  if (existingPages.length >= maxPages) {
-    return NextResponse.json(
-      { error: "Page limit reached. Upgrade to Pro for more pages." },
-      { status: 403 },
-    );
-  }
-
   try {
-    const [page] = await db
-      .insert(pages)
-      .values({
-        workspaceId: workspace.id,
+    // The page limit is enforced under the workspace lock, so a create racing
+    // a duplicate cannot both pass at four of five pages.
+    const result = await insertPageInWorkspace(db, {
+      workspaceId: workspace.id,
+      values: {
         slug: normalizedSlug,
         title: title.trim(),
         templateId: "clean-slate",
         theme: {},
-      })
-      .returning();
+      },
+    });
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 403 });
+    }
 
-    return NextResponse.json({ page });
+    return NextResponse.json({ page: result.page });
   } catch {
     // Unique-constraint violation: someone claimed the slug between the
     // availability check and the insert.

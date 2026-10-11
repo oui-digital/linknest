@@ -3,6 +3,7 @@ import type { blocks as blocksSchema, pages } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { getContrastColor } from "@/lib/contrast";
+import { isRtl, pageLanguage } from "@/lib/languages";
 import { StickyBanner } from "@/components/blocks/sticky-banner";
 import { OpenInBrowserBar } from "@/components/blocks/open-in-browser-bar";
 import type { InAppEscape } from "@/lib/in-app-browser";
@@ -57,6 +58,7 @@ export function PublicPageView({
   frameClassName?: string;
 }) {
   const layout = getTemplate(page.templateId).layout;
+  const lang = pageLanguage(page.language);
 
   return (
     <BlockRuntimeProvider
@@ -74,6 +76,8 @@ export function PublicPageView({
       <PageFrame
         theme={theme}
         className={frameClassName}
+        lang={lang}
+        dir={isRtl(lang) ? "rtl" : undefined}
         top={
           inApp || page.banner ? (
             <>

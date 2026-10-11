@@ -49,22 +49,35 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     page.seoDescription || page.bio || `${page.title} — LinkNest`;
   const canonical = getPublicPageUrl(page.slug);
 
+  // The owner's upload, or the generated card. `updatedAt` is a real Date on
+  // both cache paths (src/lib/public-page.ts revives it), and it busts the
+  // crawlers' cache of the generated card after an edit.
+  const image = {
+    url: page.ogImageUrl ?? `${canonical}/og?v=${page.updatedAt.getTime()}`,
+    width: 1200,
+    height: 630,
+    alt: `${page.title} — LinkNest page`,
+  };
+
   return {
     metadataBase: new URL(SITE_URL),
     title,
     description,
     alternates: { canonical },
+    icons: { icon: page.faviconUrl ?? "/icon.svg" },
     openGraph: {
       title,
       description,
       type: "profile",
       url: canonical,
       siteName: "LinkNest",
+      images: [image],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: [image],
     },
     // New free pages are kept out of search for their first weeks (see
     // src/lib/indexing.ts). Evaluated per request, so it lifts on its own.
@@ -126,6 +139,7 @@ export default async function PublicPage({ params, searchParams }: Props) {
     page,
     blocks: pageBlocks,
     canonicalUrl: absoluteUrl(getPublicPageUrl(page.slug)),
+    entityKind: page.entityKind === "organization" ? "organization" : "person",
   });
 
   return (

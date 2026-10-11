@@ -30,6 +30,8 @@ export function PageFrame({
   className = "min-h-screen",
   top,
   children,
+  lang,
+  dir,
 }: {
   theme: ThemeTokens;
   className?: string;
@@ -39,6 +41,13 @@ export function PageFrame({
    */
   top?: React.ReactNode;
   children: React.ReactNode;
+  /**
+   * The page's language and direction. The public route also sets them on
+   * <html>; here they make the editor preview and the dashboard preview, which
+   * render inside the site's own root layout, read and flow correctly too.
+   */
+  lang?: string;
+  dir?: "ltr" | "rtl";
 }) {
   const cssVars = themeToCssVars(theme);
 
@@ -55,6 +64,8 @@ export function PageFrame({
   return (
     <div
       className={`ln-page ${className ?? ""}`.trim()}
+      lang={lang}
+      dir={dir}
       style={{
         ...cssVars,
         backgroundColor: "var(--ln-color-bg)",
@@ -102,15 +113,15 @@ export function PageHeader({ page }: { page: Page }) {
   return (
     <div className="mb-10 flex flex-col items-center text-center">
       <div className="mb-4">
-        {/* The reviewer flagged the empty alt. The name is announced twice
-            (image, then h1) — the lesser problem; a per-page description
-            field will let owners say what the photo shows. */}
+        {/* The owner's description of the photo, or the title. With the
+            title the name is announced twice (image, then h1); the settings
+            panel asks for something better. */}
         <AvatarFallback
           avatarUrl={page.avatarUrl}
           name={page.title}
           slug={page.slug}
           size={96}
-          alt={page.title}
+          alt={page.avatarAlt || page.title}
         />
       </div>
       <p

@@ -1,12 +1,17 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { AvatarFallback } from "@/components/ui/avatar-fallback";
+import { ImageUpload } from "./image-upload";
 import type { SaveCoordinator, SaveEntity } from "./save-coordinator";
 import { BANNER_TEXT_MAX } from "@/lib/banner";
+import { LANGUAGES, pageLanguage } from "@/lib/languages";
+import { AVATAR_ALT_MAX } from "@/lib/page-schema";
+import { duplicatePage } from "@/lib/actions/page";
 
 type Page = InferSelectModel<typeof pages>;
 
@@ -117,6 +122,42 @@ export function PageSettings({
     saves.enqueue(PAGE, { avatarUrl: "" }, { immediate: true });
   }, [saves, onPageChange]);
 
+  // Uploaded images are saved at once; "" clears the field (the action maps
+  // it to null).
+  const handleImageField = useCallback(
+    (field: "ogImageUrl" | "faviconUrl", url: string) => {
+      setTouched(true);
+      onPageChange({ [field]: url || null } as Partial<Page>);
+      saves.enqueue(PAGE, { [field]: url }, { immediate: true });
+    },
+    [saves, onPageChange],
+  );
+
+  // Copying waits for every pending save, exactly like publishing: a click
+  // inside the typing debounce must not copy the page as it was a moment ago.
+  const router = useRouter();
+  const [duplicating, setDuplicating] = useState(false);
+  const handleDuplicate = useCallback(async () => {
+    setDuplicating(true);
+    try {
+      const flushed = await saves.flushAll();
+      if (!flushed.ok) {
+        onError("Fix the highlighted change before duplicating.");
+        return;
+      }
+      const result = await duplicatePage(page.id);
+      if ("error" in result && result.error) {
+        onError(result.error);
+        return;
+      }
+      if ("pageId" in result) router.push(`/dashboard/editor/${result.pageId}`);
+    } catch {
+      onError("Couldn't duplicate the page. Please try again.");
+    } finally {
+      setDuplicating(false);
+    }
+  }, [saves, page.id, router, onError]);
+
   const status = saves.status(PAGE);
   const saveLabel =
     status === "pending" || status === "saving"
@@ -174,6 +215,27 @@ export function PageSettings({
             }}
           />
         </div>
+      </section>
+
+      {/* Avatar description */}
+      <section>
+        <label className="text-xs font-medium text-gray-500">
+          Describe your photo{" "}
+          <span className="text-gray-400">
+            (alt text, {(page.avatarAlt ?? "").length}/{AVATAR_ALT_MAX})
+          </span>
+        </label>
+        <input
+          type="text"
+          value={page.avatarAlt ?? ""}
+          onChange={(e) => handleSave("avatarAlt", e.target.value)}
+          maxLength={AVATAR_ALT_MAX}
+          placeholder={`e.g. ${page.title} smiling in the studio`}
+          className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400"
+        />
+        <p className="mt-1 text-xs text-gray-400">
+          Read aloud by screen readers. Leave empty to use your page title.
+        </p>
       </section>
 
       {/* Page info */}
@@ -275,6 +337,119 @@ export function PageSettings({
         </div>
       </section>
 
+      {/* Language and subject */}
+      <section>
+        <h3 className="mb-3 text-sm font-semibold">Language</h3>
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="page-language" className="text-xs font-medium text-gray-500">
+              Your page is written in
+            </label>
+            <select
+              id="page-language"
+              value={pageLanguage(page.language)}
+              onChange={(e) => handleSave("language", e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-gray-400"
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              Tells browsers, screen readers and search engines what language to expect.
+            </p>
+          </div>
+          <div>
+            <span className="text-xs font-medium text-gray-500">This page represents</span>
+            <div className="mt-1 flex gap-1.5" role="radiogroup" aria-label="This page represents">
+              {(
+                [
+                  ["person", "A person"],
+                  ["organization", "A business or organization"],
+                ] as const
+              ).map(([kind, label]) => {
+                const current = page.entityKind === "organization" ? "organization" : "person";
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    role="radio"
+                    aria-checked={current === kind}
+                    onClick={() => handleSave("entityKind", kind)}
+                    className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                      current === kind
+                        ? "bg-gray-900 text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-xs text-gray-400">
+              Used in the structured data search engines read.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Social image and favicon */}
+      <section>
+        <h3 className="mb-1 text-sm font-semibold">Sharing and icon</h3>
+        <p className="mb-3 text-xs text-gray-400">
+          Without your own image, shares get a card drawn from your page, and the tab shows the LinkNest icon.
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-gray-500">Social preview image (1200×630)</label>
+            <div className="mt-1 flex items-center gap-3">
+              <ImageUpload
+                currentUrl={page.ogImageUrl}
+                uploadType="og"
+                shape="rect"
+                label={page.ogImageUrl ? "Replace" : "Upload"}
+                onError={onError}
+                onUpload={(url) => handleImageField("ogImageUrl", url)}
+              />
+              {page.ogImageUrl && (
+                <button
+                  type="button"
+                  onClick={() => handleImageField("ogImageUrl", "")}
+                  className="text-xs text-gray-400 hover:text-red-500"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">Favicon (square)</label>
+            <div className="mt-1 flex items-center gap-3">
+              <ImageUpload
+                currentUrl={page.faviconUrl}
+                uploadType="favicon"
+                shape="circle"
+                label={page.faviconUrl ? "Replace" : "Upload"}
+                onError={onError}
+                onUpload={(url) => handleImageField("faviconUrl", url)}
+              />
+              {page.faviconUrl && (
+                <button
+                  type="button"
+                  onClick={() => handleImageField("faviconUrl", "")}
+                  className="text-xs text-gray-400 hover:text-red-500"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Announcement banner */}
       <section>
         <h3 className="mb-1 text-sm font-semibold">Announcement banner</h3>
@@ -360,6 +535,24 @@ export function PageSettings({
             className="h-4 w-4 rounded border-gray-300"
           />
         </label>
+      </section>
+
+      {/* Duplicate */}
+      <section>
+        <h3 className="mb-1 text-sm font-semibold">Duplicate this page</h3>
+        <p className="mb-3 text-xs text-gray-400">
+          Start a French version, or a variant for another audience, from a copy of this page.
+          The copy is a draft with its own address.
+        </p>
+        <button
+          type="button"
+          onClick={handleDuplicate}
+          disabled={duplicating || saves.hasFailed() || saves.isHolding()}
+          title={saves.hasFailed() ? "A change could not be saved. Fix it before duplicating." : undefined}
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition-colors hover:bg-gray-50 disabled:opacity-50"
+        >
+          {duplicating ? "Duplicating…" : "Duplicate page"}
+        </button>
       </section>
 
       {/* Branding */}

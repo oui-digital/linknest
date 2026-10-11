@@ -21,7 +21,7 @@ describe("processImage", () => {
     const input = await createTestImage(800, 1200);
     const output = await processImage(input, "avatar");
 
-    const meta = await sharp(output).metadata();
+    const meta = await sharp(output.buffer).metadata();
     expect(meta.width).toBe(512);
     expect(meta.height).toBe(512);
     expect(meta.format).toBe("webp");
@@ -31,7 +31,7 @@ describe("processImage", () => {
     const input = await createTestImage(1600, 900);
     const output = await processImage(input, "thumbnail");
 
-    const meta = await sharp(output).metadata();
+    const meta = await sharp(output.buffer).metadata();
     expect(meta.width).toBe(160);
     expect(meta.height).toBe(160);
     expect(meta.format).toBe("webp");
@@ -41,7 +41,7 @@ describe("processImage", () => {
     const input = await createTestImage(2400, 1600);
     const output = await processImage(input);
 
-    const meta = await sharp(output).metadata();
+    const meta = await sharp(output.buffer).metadata();
     expect(meta.width).toBe(1200);
     expect(meta.format).toBe("webp");
   });
@@ -50,8 +50,32 @@ describe("processImage", () => {
     const input = await createTestImage(400, 300);
     const output = await processImage(input);
 
-    const meta = await sharp(output).metadata();
+    const meta = await sharp(output.buffer).metadata();
     expect(meta.width).toBe(400);
     expect(meta.format).toBe("webp");
+    expect(output).toMatchObject({ contentType: "image/webp", extension: "webp" });
+  });
+
+  // Not every link-preview crawler decodes WebP; the social card is JPEG.
+  it("og type: 1200x630 cover JPEG", async () => {
+    const input = await createTestImage(800, 1200);
+    const output = await processImage(input, "og");
+
+    const meta = await sharp(output.buffer).metadata();
+    expect(meta.width).toBe(1200);
+    expect(meta.height).toBe(630);
+    expect(meta.format).toBe("jpeg");
+    expect(output).toMatchObject({ contentType: "image/jpeg", extension: "jpg" });
+  });
+
+  it("favicon type: 256x256 PNG", async () => {
+    const input = await createTestImage(300, 100);
+    const output = await processImage(input, "favicon");
+
+    const meta = await sharp(output.buffer).metadata();
+    expect(meta.width).toBe(256);
+    expect(meta.height).toBe(256);
+    expect(meta.format).toBe("png");
+    expect(output).toMatchObject({ contentType: "image/png", extension: "png" });
   });
 });

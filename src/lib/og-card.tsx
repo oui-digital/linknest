@@ -1,16 +1,10 @@
 import { ImageResponse } from "next/og";
 import sharp from "sharp";
-import { db } from "@/lib/db";
-import { pages } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { normalizeSlug } from "@/lib/slugs";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { getInitials } from "@/lib/avatar";
 
-export const size = { width: 1200, height: 630 };
-export const contentType = "image/png";
-export const alt = "LinkNest page preview";
+export const OG_SIZE = { width: 1200, height: 630 };
 
 /**
  * Social preview card for a public page.
@@ -19,7 +13,21 @@ export const alt = "LinkNest page preview";
  * the entire distribution channel for a link-in-bio product — renders as a bare
  * text row. The card is drawn from the page's own theme so the preview matches
  * what the visitor lands on.
+ *
+ * Served by src/app/(public)/[username]/og/route.tsx rather than the
+ * `opengraph-image` file convention: file-based metadata overrides anything
+ * generateMetadata sets, which would have made a custom uploaded image
+ * impossible. generateMetadata now points `og:image` at either the upload or
+ * this route.
  */
+export type OgCardPage = {
+  title: string;
+  bio: string | null;
+  slug: string;
+  avatarUrl: string | null;
+  theme: unknown;
+  templateId: string;
+};
 
 /**
  * Fetch the page's own avatar and re-encode it to PNG.
@@ -80,39 +88,16 @@ function truncate(text: string, max: number): string {
   return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).replace(/[.,;:—-]$/, "")}…`;
 }
 
-export default async function Image({
-  params,
-}: {
-  // Next 16 passes params as a Promise here, same as in page.tsx.
-  params: Promise<{ username: string }>;
-}) {
-  const { username } = await params;
-  const slug = normalizeSlug(username);
-
-  const [page] = await db
-    .select({
-      title: pages.title,
-      bio: pages.bio,
-      slug: pages.slug,
-      avatarUrl: pages.avatarUrl,
-      theme: pages.theme,
-      templateId: pages.templateId,
-      isPublished: pages.isPublished,
-    })
-    .from(pages)
-    .where(eq(pages.slug, slug))
-    .limit(1);
-
+export async function renderOgCard(page: OgCardPage | null): Promise<ImageResponse> {
   const template = getTemplate(page?.templateId ?? "clean-slate");
   const theme = {
     ...template.defaultTheme,
     ...((page?.theme ?? {}) as Partial<ThemeTokens>),
   } as ThemeTokens;
 
-  const live = Boolean(page?.isPublished);
-  const title = live ? page!.title : "LinkNest";
-  const rawBio = live ? (page!.bio ?? "") : "One link for everything.";
-  const handle = live ? `@${page!.slug}` : "linknest.click";
+  const title = page ? page.title : "LinkNest";
+  const rawBio = page ? (page.bio ?? "") : "One link for everything.";
+  const handle = page ? `@${page.slug}` : "linknest.click";
 
   // Two lines of title at most, and never mid-word.
   const displayTitle = truncate(title, 52);
@@ -124,7 +109,7 @@ export default async function Image({
     displayTitle.length > 38 ? 60 : displayTitle.length > 24 ? 70 : 80;
 
   const [avatar, fontRegular, fontBold] = await Promise.all([
-    loadAvatar(live ? page!.avatarUrl : null),
+    loadAvatar(page?.avatarUrl ?? null),
     loadFont("Inter", 400, `${displayBio}${handle}`),
     loadFont("Inter", 700, displayTitle),
   ]);
@@ -155,6 +140,8 @@ export default async function Image({
         }}
       >
         {avatar ? (
+          // The OG renderer draws plain <img>; next/image does not apply here.
+          // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
           <img
             src={avatar}
             width={132}
@@ -242,6 +229,6 @@ export default async function Image({
         </div>
       </div>
     ),
-    { ...size, fonts: fonts.length ? fonts : undefined },
+    { ...OG_SIZE, fonts: fonts.length ? fonts : undefined },
   );
 }

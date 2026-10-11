@@ -22,6 +22,8 @@ import {
 } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { hasFeature, type PlanId } from "@/lib/entitlements";
+import { updatePageSchema, type UpdatePageInput } from "@/lib/page-schema";
+import { duplicatePageCore } from "@/lib/duplicate-page";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
 
@@ -106,19 +108,9 @@ const themeTokensSchema = z
   })
   .strict();
 
-const updatePageSchema = z.object({
-  pageId: z.string().uuid(),
-  title: z.string().min(1).max(255).optional(),
-  bio: z.string().max(500).optional(),
-  avatarUrl: z.string().url().max(2048).optional().or(z.literal("")),
-  templateId: z.string().max(63).optional(),
-  seoTitle: z.string().max(70).optional(),
-  seoDescription: z.string().max(160).optional(),
-});
-
 // ─── Update Page Settings ───────────────────────────────────────────────────
 
-export async function updatePage(input: z.infer<typeof updatePageSchema>) {
+export async function updatePage(input: UpdatePageInput) {
   const session = await auth();
   if (!session?.user?.id) {
     return { error: "Unauthorized" };
@@ -163,6 +155,14 @@ export async function updatePage(input: z.infer<typeof updatePageSchema>) {
     cleanUpdates.seoTitle = updates.seoTitle || null;
   if (updates.seoDescription !== undefined)
     cleanUpdates.seoDescription = updates.seoDescription || null;
+  if (updates.avatarAlt !== undefined)
+    cleanUpdates.avatarAlt = updates.avatarAlt.trim() || null;
+  if (updates.language !== undefined) cleanUpdates.language = updates.language;
+  if (updates.entityKind !== undefined) cleanUpdates.entityKind = updates.entityKind;
+  if (updates.ogImageUrl !== undefined)
+    cleanUpdates.ogImageUrl = updates.ogImageUrl || null;
+  if (updates.faviconUrl !== undefined)
+    cleanUpdates.faviconUrl = updates.faviconUrl || null;
 
   const [updated] = await db
     .update(pages)
@@ -413,4 +413,39 @@ export async function updateBanner(input: { pageId: string; banner: unknown }) {
   revalidateTag(publicPageTag(page.slug), "max");
 
   return { page: outcome.value };
+}
+
+// ─── Duplicate Page ─────────────────────────────────────────────────────────
+
+/**
+ * Copy a page and its blocks into a new draft (see src/lib/duplicate-page.ts
+ * for exactly what is and is not copied). The editor awaits its pending saves
+ * before calling this, so the copy never trails the owner's last keystrokes.
+ */
+export async function duplicatePage(pageId: string) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { error: "Unauthorized" };
+  }
+
+  const rl = await checkRateLimit(mutationRateLimit, session.user.id);
+  if (!rl.success) return { error: "Too many requests. Please slow down." };
+
+  if (!z.string().uuid().safeParse(pageId).success) {
+    return { error: "Invalid input" };
+  }
+
+  const result = await verifyPageOwnership(pageId, session.user.id);
+  if (!result) {
+    return { error: "Page not found" };
+  }
+
+  const outcome = await duplicatePageCore(db, {
+    pageId: result.page.id,
+    workspaceId: result.workspace.id,
+  });
+  if ("error" in outcome) return { error: outcome.error };
+
+  revalidatePath("/dashboard");
+  return { pageId: outcome.pageId };
 }

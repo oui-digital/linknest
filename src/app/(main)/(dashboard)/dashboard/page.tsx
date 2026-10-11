@@ -7,6 +7,7 @@ import { getLimit } from "@/lib/entitlements";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { AnalyticsCard } from "@/components/dashboard/analytics-card";
 import { NewPageButton } from "@/components/dashboard/new-page-button";
+import { DuplicatePageButton } from "@/components/dashboard/duplicate-page-button";
 import Link from "next/link";
 
 export default async function DashboardPage() {
@@ -94,6 +95,7 @@ export default async function DashboardPage() {
                 >
                   Edit
                 </Link>
+                <DuplicatePageButton pageId={page.id} canCreate={canCreatePage} />
                 {page.isPublished && (
                   <a
                     href={getPublicPageUrl(page.slug)}
