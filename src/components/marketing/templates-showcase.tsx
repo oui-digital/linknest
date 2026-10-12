@@ -2,6 +2,7 @@
    Imports TEMPLATES from @/lib/templates. Server component. */
 
 import { TEMPLATES } from "@/lib/templates";
+import Image from "next/image";
 
 export default function TemplatesShowcase() {
   return (
@@ -13,7 +14,7 @@ export default function TemplatesShowcase() {
             Start with taste. Make it yours.
           </h2>
           <p className="mt-4 text-lg text-slate">
-            Choose from our handcrafted templates, then customize every detail to match your brand.
+            Choose from eight templates, including two Pro layouts. These previews show LinkNest&apos;s actual rendered pages.
           </p>
         </div>
 
@@ -24,40 +25,8 @@ export default function TemplatesShowcase() {
               key={template.id}
               className="group relative overflow-hidden rounded-[16px] border border-[rgba(0,0,0,0.06)] bg-white shadow-[var(--shadow-sm)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]"
             >
-              {/* Preview area — uses actual template theme colors */}
-              <div
-                className="flex h-48 flex-col justify-between p-6"
-                style={{
-                  background: template.defaultTheme.backgroundGradient || template.defaultTheme.colorBackground,
-                }}
-              >
-                <div className="space-y-2">
-                  <div
-                    className="h-10 w-10 rounded-full"
-                    style={{ background: template.defaultTheme.colorPrimary, opacity: 0.8 }}
-                  />
-                  <div
-                    className="h-3 w-20 rounded"
-                    style={{ background: template.defaultTheme.colorText, opacity: 0.5 }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div
-                    className="h-8"
-                    style={{
-                      background: template.defaultTheme.colorAccent,
-                      opacity: 0.9,
-                      borderRadius: `${template.defaultTheme.borderRadius}px`,
-                    }}
-                  />
-                  <div
-                    className="h-8"
-                    style={{
-                      background: template.defaultTheme.colorSurface,
-                      borderRadius: `${template.defaultTheme.borderRadius}px`,
-                    }}
-                  />
-                </div>
+              <div className="relative aspect-[640/470] overflow-hidden" style={{ backgroundColor: template.defaultTheme.colorBackground }}>
+                <Image src={`/marketing/templates/${template.id}.webp`} alt={`Example page rendered with the ${template.name} template`} width={640} height={470} loading="lazy" className="h-full w-full object-cover" />
               </div>
 
               {/* Info */}

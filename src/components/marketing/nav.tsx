@@ -24,13 +24,13 @@ export default function Nav() {
 
           {/* Desktop nav links — 15px, 500 weight, 0.01em tracking per brand */}
           <div className="hidden items-center gap-7 md:flex">
-            {["Features", "Templates", "Pricing", "FAQ"].map((item) => (
+            {[{ label: "Features", href: "/features" }, { label: "Templates", href: "/#templates" }, { label: "Pricing", href: "/pricing" }, { label: "FAQ", href: "/#faq" }].map((item) => (
               <a
-                key={item}
-                href={`#${item.toLowerCase()}`}
+                key={item.label}
+                href={item.href}
                 className="text-[15px] font-medium tracking-[0.01em] text-slate transition-colors duration-200 hover:text-indigo"
               >
-                {item}
+                {item.label}
               </a>
             ))}
             <Link
@@ -65,13 +65,13 @@ export default function Nav() {
               <span className="sr-only">Menu</span>
             </summary>
             <div className="absolute right-0 top-12 w-56 rounded-[16px] border border-[rgba(0,0,0,0.06)] bg-white p-3 shadow-[var(--shadow-md)]">
-              {["Features", "Templates", "Pricing", "FAQ"].map((item) => (
+              {[{ label: "Features", href: "/features" }, { label: "Templates", href: "/#templates" }, { label: "Pricing", href: "/pricing" }, { label: "FAQ", href: "/#faq" }].map((item) => (
                 <a
-                  key={item}
-                  href={`#${item.toLowerCase()}`}
+                  key={item.label}
+                  href={item.href}
                   className="block rounded-lg px-4 py-2.5 text-[15px] font-medium text-slate transition-colors hover:bg-cloud hover:text-indigo"
                 >
-                  {item}
+                  {item.label}
                 </a>
               ))}
               <div className="mt-2 border-t border-mist/40 pt-3 space-y-2">

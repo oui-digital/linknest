@@ -12,7 +12,7 @@ export default function FinalCTA() {
         </h2>
         <p className="mx-auto mt-5 max-w-[540px] text-lg leading-relaxed text-white/80">
           Give them one beautiful place to find everything. Start your LinkNest
-          in 60 seconds&mdash;no credit card required.
+          for free&mdash;no credit card required.
         </p>
         <Link
           href="/signup"

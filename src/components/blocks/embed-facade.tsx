@@ -42,10 +42,11 @@ export function EmbedFacade({
   aspect: EmbedAspect;
   autoplaySrc: string;
 }) {
-  const { mode } = useBlockRuntime();
+  const { mode, embedded } = useBlockRuntime();
   const [playing, setPlaying] = useState(false);
   const Icon = ICONS[provider];
   const verb = provider === "calendly" ? "Open booking for" : "Play";
+  const Tag = embedded ? "span" : "a";
 
   return (
     <div className="flex w-full flex-col gap-2">
@@ -68,10 +69,10 @@ export function EmbedFacade({
             type="button"
             onClick={() => setPlaying(true)}
             disabled={mode === "preview"}
-            data-link-id={blockId}
-            data-link-event="embed_play"
-            data-link-label="Play"
-            data-link-url={canonicalUrl}
+            data-link-id={embedded ? undefined : blockId}
+            data-link-event={embedded ? undefined : "embed_play"}
+            data-link-label={embedded ? undefined : "Play"}
+            data-link-url={embedded ? undefined : canonicalUrl}
             aria-label={`${verb} ${title} on ${providerName}`}
             className="group absolute inset-0 flex h-full w-full items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-[-4px] disabled:cursor-default"
             style={{ outlineColor: "var(--ln-color-text)" }}
@@ -90,17 +91,15 @@ export function EmbedFacade({
           </button>
         )}
       </div>
-      <a
-        href={canonicalUrl}
-        target="_blank"
-        rel={USER_LINK_REL}
-        data-link-id={blockId}
-        data-link-label={`Open on ${providerName}`}
+      <Tag
+        {...(!embedded ? { href: canonicalUrl, target: "_blank", rel: USER_LINK_REL } : {})}
+        data-link-id={embedded ? undefined : blockId}
+        data-link-label={embedded ? undefined : `Open on ${providerName}`}
         className="self-center rounded text-xs underline underline-offset-2 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2"
         style={{ color: "var(--ln-color-text-muted)", outlineColor: "var(--ln-color-text)" }}
       >
         Open on {providerName}
-      </a>
+      </Tag>
     </div>
   );
 }

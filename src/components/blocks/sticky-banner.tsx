@@ -38,7 +38,7 @@ export function StickyBanner({
   background: string;
   foreground: string;
 }) {
-  const { mode, pageId } = useBlockRuntime();
+  const { mode, pageId, embedded } = useBlockRuntime();
   const key = bannerKey(pageId, banner);
   const stored = useSyncExternalStore(
     noopSubscribe,
@@ -50,6 +50,7 @@ export function StickyBanner({
   if (stored || dismissedNow === key) return null;
 
   const external = banner.url ? isExternalPage(banner.url) : false;
+  const Tag = embedded ? "span" : "a";
 
   return (
     <div
@@ -59,21 +60,21 @@ export function StickyBanner({
       style={{ backgroundColor: background, color: foreground }}
     >
       {banner.url ? (
-        <a
-          href={banner.url}
-          {...(external ? { target: "_blank", rel: USER_LINK_REL } : {})}
-          data-link-id="banner"
-          data-link-label="Banner"
+        <Tag
+          {...(!embedded ? { href: banner.url, ...(external ? { target: "_blank", rel: USER_LINK_REL } : {}) } : {})}
+          data-link-id={embedded ? undefined : "banner"}
+          data-link-label={embedded ? undefined : "Banner"}
           className="rounded font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2"
           style={{ outlineColor: foreground }}
         >
           {banner.text}
-        </a>
+        </Tag>
       ) : (
         <span className="font-medium">{banner.text}</span>
       )}
       <button
         type="button"
+        disabled={embedded}
         onClick={() => {
           setDismissedNow(key);
           if (mode === "public") {

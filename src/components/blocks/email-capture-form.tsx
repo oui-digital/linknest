@@ -25,7 +25,7 @@ const DISABLED_TURNSTILE = { enabled: false, siteKey: null };
  * one the server stores with the request.
  */
 export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Copy }) {
-  const { mode, pageId, pageTitle, turnstile = DISABLED_TURNSTILE, listOpen = true, cta } =
+  const { mode, embedded, pageId, pageTitle, turnstile = DISABLED_TURNSTILE, listOpen = true, cta } =
     useBlockRuntime();
   const [email, setEmail] = useState("");
   const [website, setWebsite] = useState("");
@@ -173,9 +173,7 @@ export function EmailCaptureForm({ blockId, copy }: { blockId: string; copy: Cop
         )}
         <p className="break-words text-center text-xs" style={{ color: "var(--ln-color-text-muted)" }}>
           By subscribing you agree to receive emails from {pageTitle}. Unsubscribe anytime.{" "}
-          <Link href="/privacy" className="underline">
-            Privacy
-          </Link>
+          {embedded ? <span className="underline">Privacy</span> : <Link href="/privacy" className="underline">Privacy</Link>}
         </p>
         {status === "error" && (
           <p role="alert" className="text-center text-sm text-red-600">

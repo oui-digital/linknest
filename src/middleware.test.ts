@@ -46,7 +46,7 @@ describe("middleware: public page URLs", () => {
   });
 
   it("sends app-route handles to the 404 instead of a page lookup", async () => {
-    for (const path of ["/@dashboard", "/@Dashboard", "/@report/abc", "/@api/x"]) {
+    for (const path of ["/@dashboard", "/@Dashboard", "/@report/abc", "/@api/x", "/@features", "/@Features/email-capture", "/@opengraph-image"]) {
       const res = await run(`${ORIGIN}${path}`);
       expect(res.status, path).toBe(200);
       expect(res.headers.get("x-middleware-rewrite"), path).toBe(`${ORIGIN}/not-found`);
@@ -54,7 +54,7 @@ describe("middleware: public page URLs", () => {
   });
 
   it("leaves the root, nested paths and static assets alone", async () => {
-    for (const path of ["/", "/foo/bar", "/linknest-logo.svg", "/pricing"]) {
+    for (const path of ["/", "/foo/bar", "/linknest-logo.svg", "/pricing", "/features", "/features/email-capture", "/opengraph-image"]) {
       const res = await run(`${ORIGIN}${path}`);
       expect(res.status, path).toBe(200);
       expect(res.headers.get("location"), path).toBeNull();

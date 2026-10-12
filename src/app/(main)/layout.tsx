@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Serif_Display, DM_Sans } from "next/font/google";
+import { SITE_URL } from "@/lib/site";
 import "../globals.css";
 
 // preload: false — these two faces were being preloaded at high priority on
@@ -24,13 +25,14 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   // The icon used to be the app/icon.svg file convention, which applied to
   // every route and would have overridden a page's own favicon; it is a
   // static file now and each root layout declares it.
   icons: { icon: "/icon.svg" },
-  title: "LinkNest — Your Links Deserve a Home",
+  title: "LinkNest | Link-in-Bio Pages, Email Capture & Analytics",
   description:
-    "The link-in-bio tool that makes you look professional in seconds. Gorgeous templates, brand-level customization, and blazing performance.",
+    "Create a branded link-in-bio page for your content, bookings and email sign-ups. See what gets clicks with LinkNest.",
 };
 
 /**

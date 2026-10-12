@@ -43,6 +43,41 @@ Open http://localhost:3000.
 | `pnpm db:push` | Push schema to the database |
 | `pnpm db:studio` | Drizzle Studio |
 | `pnpm db:seed` | Seed development data |
+| `pnpm marketing:capture` | Rebuild the eight checked-in template gallery images offline |
+
+## Marketing assets and release check
+
+The gallery comes from `src/lib/marketing/examples.ts` through the real page
+renderer. Capture runs entirely in process: it renders fixture markup with
+`react-dom/server`, compiles the Tailwind stylesheet, and passes the HTML to
+Playwright with `setContent`. It does not start Next.js, read `.env.local`, or
+connect to the database. The WebP results in `public/marketing/templates/` are
+committed; rebuild them manually after changing a template or the fixtures:
+
+```bash
+pnpm exec playwright install chromium
+pnpm marketing:capture
+```
+
+Before releasing the `/features` namespace, run one read-only production check
+using a verified, explicit Postgres URL (not an ambient `DATABASE_URL`):
+
+```bash
+pnpm marketing:check-slug -- '<verified production Postgres URL>'
+```
+
+The October 2026 check returned `features slug occupied: false` on the
+production Neon host. Recheck before deploying if ownership may have changed.
+The script opens a read-only transaction and does not print the URL. The image
+routes use the checked-in static DM Sans Bold and DM Serif Display Regular TTF
+files under `src/assets/marketing-fonts/`, with their OFL notices.
+
+Marketing conversion measurement has no pre-launch baseline yet. The current
+marketing pages do not send landing-page or signup-funnel events. A comparison
+after release needs the Search Console `www` property for organic traffic and
+a two-week baseline; account creation and first publish dates can be counted
+from `users.createdAt` and `pages.firstPublishedAt`. Do not interpret a change
+in sign-ups as a landing-page conversion-rate change until visit counts exist.
 
 ## Architecture notes
 

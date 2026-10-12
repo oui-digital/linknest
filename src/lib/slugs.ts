@@ -7,6 +7,8 @@ const SYSTEM_SLUGS = new Set([
   "login",
   "signup",
   "pricing",
+  "features",
+  "opengraph-image",
   "api",
   "admin",
   "settings",

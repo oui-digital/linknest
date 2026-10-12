@@ -131,7 +131,8 @@ export function PageFrame({
   );
 }
 
-export function PageHeader({ page }: { page: Page }) {
+export function PageHeader({ page, embedded = false }: { page: Page; embedded?: boolean }) {
+  const Heading = embedded ? "h3" : "h1";
   return (
     <div className="mb-10 flex flex-col items-center text-center">
       <div className="mb-4">
@@ -152,7 +153,7 @@ export function PageHeader({ page }: { page: Page }) {
       >
         @{page.slug}
       </p>
-      <h1
+      <Heading
         style={{
           fontFamily: "var(--ln-font-heading)",
           fontWeight: "var(--ln-font-weight-heading)",
@@ -161,7 +162,7 @@ export function PageHeader({ page }: { page: Page }) {
         }}
       >
         {page.title}
-      </h1>
+      </Heading>
       {page.bio && (
         // pre-line keeps the bio textarea's line breaks. wrap-anywhere because
         // this is a centred flex item: break-words would not stop one long
@@ -262,11 +263,13 @@ export function BlockLayout({
   blocks,
   theme,
   mode,
+  embedded = false,
 }: {
   layout: LayoutType;
   blocks: Block[];
   theme: ThemeTokens;
   mode: RenderMode;
+  embedded?: boolean;
 }) {
   // Hidden blocks are dropped before any wrapper is created, so they can never
   // leave an empty slot. The editor preview keeps them, dimmed and tagged:
@@ -297,6 +300,7 @@ export function BlockLayout({
               <BlockRenderer
                 block={block}
                 mode={mode}
+                embedded={embedded}
                 tile={placement.tile}
                 resolvedStyle={resolveBlockStyle(theme, block)}
               />
@@ -332,6 +336,7 @@ export function BlockLayout({
             <BlockRenderer
               block={block}
               mode={mode}
+              embedded={embedded}
               resolvedStyle={resolveBlockStyle(theme, block)}
             />
           </div>
@@ -340,6 +345,7 @@ export function BlockLayout({
             key={block.id}
             block={block}
             mode={mode}
+            embedded={embedded}
             resolvedStyle={resolveBlockStyle(theme, block)}
           />
         ),

@@ -1,85 +1,28 @@
-/* FAQ — 8-question accordion using native <details>/<summary> (zero JS).
-   Accessible by default: keyboard-navigable, screen-reader friendly.
-   Server component. */
+import { PLAN_FACTS } from "@/lib/pricing";
+
+const faqs = [
+  { question: "What can I put on my LinkNest page?", answer: "Add link cards with thumbnails and descriptions, headings, text, images, social icons, an announcement banner, an email sign-up form, and supported YouTube, Vimeo, Spotify or Calendly embeds. Feature a key link and arrange blocks visually." },
+  { question: "Is LinkNest free?", answer: `Yes. Free includes one page, up to ${PLAN_FACTS.free.max_blocks_per_page} links and blocks, ${PLAN_FACTS.free.templates} templates, email sign-ups for up to ${PLAN_FACTS.free.max_subscribers} confirmed subscribers, and ${PLAN_FACTS.free.analytics_days} days of reporting. No credit card is required to start.` },
+  { question: "Can I collect email sign-ups?", answer: `Yes. Add an email block to your published page. Visitors confirm by email before joining your list. Free supports ${PLAN_FACTS.free.max_subscribers} confirmed subscribers across your workspace; Pro removes that limit and adds CSV export. LinkNest does not send newsletters.` },
+  { question: "What does the analytics report show?", answer: `See page views, link clicks, top links and referring sites. Counts also appear beside blocks in the editor. Free includes ${PLAN_FACTS.free.analytics_days} days and Pro includes up to ${PLAN_FACTS.pro.analytics_days} days. Clicks per view divides total clicks by views; it is not a unique-visitor conversion rate.` },
+  { question: "How can I customize a page?", answer: `Start with a template and arrange your content. Free offers curated palettes and ${PLAN_FACTS.free.fonts} system fonts. Pro adds premium templates, custom hex colors, ${PLAN_FACTS.pro.googleFonts}+ Google Fonts, ${PLAN_FACTS.pro.buttonStyles} button styles and badge removal.` },
+  { question: "Can I manage more than one page?", answer: `Pro supports up to ${PLAN_FACTS.pro.max_pages} pages. You can duplicate a page as a draft to reuse its design and blocks. Analytics and published status do not copy over.` },
+  { question: "What happens when I cancel Pro?", answer: "Pro lasts through your paid period. After a seven-day downgrade grace period, the oldest published page remains live under the Free one-page limit; additional pages are unpublished and kept as drafts. You can upgrade again to publish them." },
+  { question: "Will my page appear in Google immediately?", answer: "You can share a published page right away. Newly published Free pages are kept out of search indexing for their first 14 days. Search engines decide when and whether to index eligible pages." },
+];
 
 export default function FAQ() {
-  const faqs = [
-    {
-      question: "What is LinkNest?",
-      answer:
-        "LinkNest is a link-in-bio tool that helps creators, founders, and brands share all their important links in one beautiful page. Think of it as your professional homepage on the internet.",
-    },
-    {
-      question: "Is LinkNest really free?",
-      answer:
-        "Yes! Our Free plan includes up to 50 links and blocks, 6 gorgeous templates, basic analytics, and everything you need to get started. You can upgrade to Pro anytime for advanced features like extra templates, full color customization, and removing our badge.",
-    },
-    {
-      question: "What can I put on my page?",
-      answer:
-        "Links, headings, text blocks, images, and dividers. Free pages hold up to 50 blocks and Pro pages up to 100, and you can arrange your content however you like with our visual editor.",
-    },
-    {
-      question: "How much customization do I get?",
-      answer:
-        "Full control. Choose from 8 templates, then customize colors, fonts, spacing, button styles, and more. Our visual editor gives you brand-level customization without touching code.",
-    },
-    {
-      question: "Do you have analytics?",
-      answer:
-        "Yes! Free users get 7-day page view tracking. Pro users get 90 days of analytics so you can see how your page is performing over time.",
-    },
-    {
-      question: 'Can I remove the "Made with LinkNest" badge?',
-      answer:
-        "Pro users can remove the badge completely. Free users keep the small badge at the bottom of their page\u2014it helps us grow while keeping the service free for everyone.",
-    },
-    {
-      question: "How fast are LinkNest pages?",
-      answer:
-        "Really fast. LinkNest is built on Next.js with modern infrastructure, so your pages load quickly with no unnecessary bloat.",
-    },
-    {
-      question: "Can I cancel Pro anytime?",
-      answer:
-        "Of course. No contracts, no commitments. If you cancel, you keep Pro features until the end of your billing period, then revert to the Free plan. Your page stays live either way.",
-    },
-  ];
-
   return (
-    <section id="faq" className="bg-cloud py-16 sm:py-20 lg:py-28">
-      <div className="mx-auto max-w-[720px] px-5 sm:px-8">
-        {/* Header */}
-        <div className="text-center">
-          <h2 className="font-serif text-[clamp(28px,4vw,44px)] leading-[1.15] tracking-[-0.01em] text-indigo">
-            Frequently asked questions
-          </h2>
-        </div>
-
-        {/* FAQ items — <details> is natively accessible */}
-        <div className="mt-12 space-y-3">
-          {faqs.map((faq, index) => (
-            <details
-              key={index}
-              className="group overflow-hidden rounded-[16px] border border-[rgba(0,0,0,0.06)] bg-white"
-            >
-              <summary className="flex cursor-pointer items-center justify-between px-6 py-5 text-indigo transition-colors [&::-webkit-details-marker]:hidden list-none hover:bg-sand/50">
-                <span className="pr-4 font-medium">{faq.question}</span>
-                <svg
-                  className="h-5 w-5 shrink-0 text-slate transition-transform duration-200 group-open:rotate-45"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
+    <section id="faq" className="bg-cloud py-20 lg:py-28">
+      <div className="mx-auto max-w-[780px] px-5 sm:px-8">
+        <h2 className="text-center font-serif text-[clamp(30px,4vw,44px)] text-indigo">Questions before you start?</h2>
+        <div className="mt-10 space-y-3">
+          {faqs.map(({ question, answer }) => (
+            <details key={question} className="group overflow-hidden rounded-2xl border border-black/5 bg-white">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 font-semibold text-indigo [&::-webkit-details-marker]:hidden">
+                {question}<span className="text-xl text-coral transition-transform group-open:rotate-45" aria-hidden="true">+</span>
               </summary>
-              <div className="px-6 pb-6 pt-1">
-                <p className="text-[15px] leading-relaxed text-slate">
-                  {faq.answer}
-                </p>
-              </div>
+              <p className="px-6 pb-6 leading-relaxed text-slate">{answer}</p>
             </details>
           ))}
         </div>

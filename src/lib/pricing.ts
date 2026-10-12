@@ -1,4 +1,6 @@
 import { PLAN_MATRIX } from "@/lib/entitlements";
+import { TEMPLATES } from "@/lib/templates";
+import { COLOR_PALETTES, FREE_BUTTON_STYLES, GOOGLE_FONTS, PRO_BUTTON_STYLES, SYSTEM_FONTS } from "@/lib/templates/theme";
 
 /**
  * Single source of truth for customer-facing plan copy.
@@ -16,15 +18,33 @@ import { PLAN_MATRIX } from "@/lib/entitlements";
  */
 export const PRICE_MONTHLY = 8;
 export const PRICE_YEARLY = 72;
-export const PRICE_YEARLY_MONTHLY_EQUIVALENT = 6;
+export const PRICE_YEARLY_MONTHLY_EQUIVALENT = PRICE_YEARLY / 12;
+export const YEARLY_SAVINGS_PERCENT = Math.round((1 - PRICE_YEARLY / (PRICE_MONTHLY * 12)) * 100);
+
+export const PLAN_FACTS = {
+  free: {
+    ...PLAN_MATRIX.free,
+    templates: TEMPLATES.filter((template) => template.tier === "free").length,
+    palettes: COLOR_PALETTES.length,
+    fonts: SYSTEM_FONTS.length,
+    buttonStyles: FREE_BUTTON_STYLES.length,
+  },
+  pro: {
+    ...PLAN_MATRIX.pro,
+    templates: TEMPLATES.length,
+    premiumTemplates: TEMPLATES.filter((template) => template.tier === "pro").length,
+    googleFonts: GOOGLE_FONTS.length,
+    buttonStyles: PRO_BUTTON_STYLES.length,
+  },
+} as const;
 
 export const FREE_FEATURES = [
   `${PLAN_MATRIX.free.max_pages} page`,
   `Up to ${PLAN_MATRIX.free.max_blocks_per_page} links & blocks`,
-  "6 templates",
-  "5 curated color palettes",
-  "6 system fonts",
-  "3 button styles",
+  `${PLAN_FACTS.free.templates} templates`,
+  `${PLAN_FACTS.free.palettes} curated color palettes`,
+  `${PLAN_FACTS.free.fonts} system fonts`,
+  `${PLAN_FACTS.free.buttonStyles} button styles`,
   `${PLAN_MATRIX.free.analytics_days}-day views, link clicks, top links & sources`,
   `${PLAN_MATRIX.free.max_asset_bytes / 1_000_000} MB storage`,
   `Email sign-ups (up to ${PLAN_MATRIX.free.max_subscribers} subscribers)`,
@@ -34,10 +54,10 @@ export const PRO_FEATURES = [
   "Everything in Free",
   `${PLAN_MATRIX.pro.max_pages} pages`,
   `Up to ${PLAN_MATRIX.pro.max_blocks_per_page} links & blocks`,
-  "All 8 templates, including 2 premium",
+  `All ${PLAN_FACTS.pro.templates} templates, including ${PLAN_FACTS.pro.premiumTemplates} premium`,
   "Custom hex colors (any color)",
-  "30+ Google Fonts",
-  "6 button styles",
+  `${PLAN_FACTS.pro.googleFonts}+ Google Fonts`,
+  `${PLAN_FACTS.pro.buttonStyles} button styles`,
   `${PLAN_MATRIX.pro.analytics_days}-day views, link clicks, top links & sources`,
   `${PLAN_MATRIX.pro.max_asset_bytes / 1_000_000} MB storage`,
   "Remove LinkNest badge",

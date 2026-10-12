@@ -14,7 +14,7 @@ type Block = InferSelectModel<typeof blocks>;
  * `data-link-label` for analytics (the beacon would otherwise record an empty
  * label).
  */
-export function SocialsBlock({ block }: { block: Block }) {
+export function SocialsBlock({ block, embedded = false }: { block: Block; embedded?: boolean }) {
   const items = parseBlockContent("socials", block.content).items ?? [];
   if (items.length === 0) return null;
 
@@ -27,16 +27,16 @@ export function SocialsBlock({ block }: { block: Block }) {
         const Icon = SOCIAL_ICONS[item.platform];
         const name = item.label || platformName(item.platform);
         const external = isExternalPage(item.url);
+        const Tag = embedded ? "span" : "a";
         return (
           <li key={item.url}>
             {/* The page's own profiles: the one place rel="me" belongs. */}
-            <a
-              href={item.url}
-              {...(external ? { target: "_blank", rel: IDENTITY_LINK_REL } : {})}
+            <Tag
+              {...(!embedded ? { href: item.url, ...(external ? { target: "_blank", rel: IDENTITY_LINK_REL } : {}) } : {})}
               aria-label={name}
               title={name}
-              data-link-id={block.id}
-              data-link-label={name}
+              data-link-id={embedded ? undefined : block.id}
+              data-link-label={embedded ? undefined : name}
               className="flex h-11 w-11 items-center justify-center rounded-full transition-transform hover:scale-110 focus-visible:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{
                 color: "var(--ln-btn-text)",
@@ -51,7 +51,7 @@ export function SocialsBlock({ block }: { block: Block }) {
               }}
             >
               <Icon size={20} aria-hidden focusable="false" />
-            </a>
+            </Tag>
           </li>
         );
       })}

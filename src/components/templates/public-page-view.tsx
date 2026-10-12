@@ -43,6 +43,7 @@ export function PublicPageView({
   inApp,
   frameClassName,
   fonts,
+  embedded = false,
 }: {
   page: Page;
   blocks: Block[];
@@ -60,6 +61,7 @@ export function PublicPageView({
   frameClassName?: string;
   /** Self-hosted theme fonts (server only); omitted, the Google stylesheet loads. */
   fonts?: ResolvedFonts;
+  embedded?: boolean;
 }) {
   const layout = getTemplate(page.templateId).layout;
   const lang = pageLanguage(page.language);
@@ -69,6 +71,7 @@ export function PublicPageView({
       value={{
         ...runtime,
         mode,
+        embedded,
         pageId: page.id,
         pageTitle: page.title,
         cta: {
@@ -102,10 +105,17 @@ export function PublicPageView({
             the frame so it keeps the theme's max-width and padding, and the
             <footer> stays OUTSIDE it — a footer nested in <main> maps to
             "generic" rather than "contentinfo". */}
-        <main>
-          <PageHeader page={page} />
-          <BlockLayout layout={layout} blocks={blocks} theme={theme} mode={mode} />
-        </main>
+        {embedded ? (
+          <div>
+            <PageHeader page={page} embedded />
+            <BlockLayout layout={layout} blocks={blocks} theme={theme} mode={mode} embedded />
+          </div>
+        ) : (
+          <main>
+            <PageHeader page={page} />
+            <BlockLayout layout={layout} blocks={blocks} theme={theme} mode={mode} />
+          </main>
+        )}
         <PageFooter
           pageId={page.id}
           mode={mode}

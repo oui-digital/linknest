@@ -7,11 +7,11 @@
 import { useState } from "react";
 import Link from "next/link";
 
-import { FREE_FEATURES, PRO_FEATURES } from "@/lib/pricing";
+import { FREE_FEATURES, PRO_FEATURES, PRICE_MONTHLY, PRICE_YEARLY, PRICE_YEARLY_MONTHLY_EQUIVALENT, YEARLY_SAVINGS_PERCENT } from "@/lib/pricing";
 
 export default function PricingPreview() {
   const [annual, setAnnual] = useState(false);
-  const price = annual ? 6 : 8;
+  const price = annual ? PRICE_YEARLY_MONTHLY_EQUIVALENT : PRICE_MONTHLY;
 
   return (
     <section id="pricing" className="py-16 sm:py-20 lg:py-28">
@@ -46,7 +46,7 @@ export default function PricingPreview() {
           </button>
           <span className={`text-sm font-medium transition-colors ${annual ? "text-indigo" : "text-slate"}`}>
             Yearly{" "}
-            <span className="text-teal font-bold">save 25%</span>
+            <span className="text-teal font-bold">save {YEARLY_SAVINGS_PERCENT}%</span>
           </span>
         </div>
 
@@ -84,7 +84,7 @@ export default function PricingPreview() {
           <div className="relative rounded-[16px] border-2 border-coral bg-white p-8 shadow-[var(--shadow-md)]">
             <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
               <span className="rounded-full bg-coral px-4 py-1 text-[13px] font-bold text-white shadow-sm">
-                Most Popular
+                More room to grow
               </span>
             </div>
 
@@ -95,7 +95,7 @@ export default function PricingPreview() {
             </div>
             {annual && (
               <p className="mt-1 text-sm font-medium text-teal">
-                Billed annually at $72
+                Billed annually at ${PRICE_YEARLY}
               </p>
             )}
             <p className="mt-3 text-sm text-slate">For creators ready to stand out</p>
@@ -104,10 +104,9 @@ export default function PricingPreview() {
               href="/signup"
               className="mt-8 block w-full rounded-[10px] bg-coral px-6 py-3 text-center text-[15px] font-bold tracking-[0.02em] text-white transition-all duration-200 hover:-translate-y-px hover:bg-coral-hover hover:shadow-[0_4px_16px_rgba(232,97,77,0.3)]"
             >
-              {/* Not "Start Free Trial": checkout creates no trial period, so
-                  this CTA led straight to an immediate charge. */}
-              Get Started
+              Start free
             </Link>
+            <p className="mt-2 text-center text-xs text-slate">Upgrade from your dashboard.</p>
 
             <ul className="mt-8 space-y-3">
               {PRO_FEATURES.map((feature) => (

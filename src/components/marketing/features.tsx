@@ -1,105 +1,43 @@
-/* Features — 6-card grid with inline SVG icons (1.5px stroke per brand §6).
-   Brand §7: "Every detail. Your way." Server component. */
+import Link from "next/link";
+import { ExamplePage } from "./example-page";
+
+const benefits = [
+  { title: "Show more of what you do", body: "Put rich link cards, videos, music, social profiles and bookings together. Give the work that matters most a prominent place.", href: "/features/embeds", cta: "Explore content and bookings" },
+  { title: "Grow an audience you can reach", body: "Let visitors join your email list right on your page. Every subscription uses confirmation, and Pro gives you unlimited subscribers plus CSV export.", href: "/features/email-capture", cta: "See email capture" },
+  { title: "Learn what gets attention", body: "See views, link clicks, your top links and referring sites. Check counts beside blocks while you edit, then make better choices about what to feature.", href: "/features/link-analytics", cta: "See link analytics" },
+];
 
 export default function Features() {
-  const features = [
-    {
-      icon: (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="13.5" cy="6.5" r="0.5" fill="currentColor" />
-          <circle cx="17.5" cy="10.5" r="0.5" fill="currentColor" />
-          <circle cx="8.5" cy="7.5" r="0.5" fill="currentColor" />
-          <path d="M3.74 15.5a9 9 0 0 1 16.52 0M9.74 15.5a5 5 0 0 1 4.52 0" />
-          <rect x="14" y="18" width="4" height="4" rx="1" />
-          <rect x="6" y="18" width="4" height="4" rx="1" />
-        </svg>
-      ),
-      title: "Custom Colors & Fonts",
-      description: "Full brand customization with custom hex colors and 30+ Google Fonts. Your page, your identity.",
-    },
-    {
-      icon: (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <path d="M3 9h18M9 21V9" />
-        </svg>
-      ),
-      title: "8 Handcrafted Templates",
-      description: "Start with a designer-quality template, then make it yours. From minimal to bold, there\u2019s a look for every brand.",
-    },
-    {
-      icon: (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 3v18h18" />
-          <path d="m19 9-5 5-4-4-5 5" />
-        </svg>
-      ),
-      title: "Analytics That Help",
-      description: "Track your page views over time. Free users get 7-day stats, Pro users get 90 days of data to understand what\u2019s working.",
-    },
-    {
-      icon: (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-        </svg>
-      ),
-      title: "Fast by Default",
-      description: "Built on Next.js and modern infrastructure so your pages load quickly. No bloat, no unnecessary scripts.",
-    },
-    {
-      icon: (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 6h16M4 12h10M4 18h14" />
-          <rect x="18" y="4" width="2" height="4" rx="0.5" />
-          <rect x="12" y="16" width="2" height="4" rx="0.5" />
-        </svg>
-      ),
-      title: "Rich Content Blocks",
-      description: "Links, headings, text, images, and dividers\u2014build your page with flexible blocks that tell your story.",
-    },
-    {
-      icon: (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="5" y="2" width="14" height="20" rx="2" />
-          <path d="M12 18h.01" />
-        </svg>
-      ),
-      title: "Mobile-First",
-      description: "Looks perfect on every device. No pinch-to-zoom, no broken layouts, no compromises.",
-    },
-  ];
-
   return (
-    <section id="features" className="bg-sand py-16 sm:py-20 lg:py-28">
+    <section id="features" className="bg-sand py-20 lg:py-28">
       <div className="mx-auto max-w-[1200px] px-5 sm:px-8">
-        {/* Header */}
-        <div className="mx-auto max-w-[720px] text-center">
-          <h2 className="font-serif text-[clamp(28px,4vw,44px)] leading-[1.15] tracking-[-0.01em] text-indigo">
-            Every detail. Your way.
-          </h2>
-          <p className="mt-4 text-lg text-slate">
-            The customization you need without the complexity you don&apos;t.
-          </p>
+        <div className="max-w-[700px]">
+          <p className="text-sm font-bold uppercase tracking-[0.16em] text-coral">More than links</p>
+          <h2 className="mt-4 font-serif text-[clamp(32px,4vw,48px)] leading-tight text-indigo">One page that works harder for you.</h2>
+          <p className="mt-4 text-lg text-slate">Your audience should be able to explore your work, take the next step and stay in touch without hunting across profiles.</p>
         </div>
-
-        {/* Features grid — brand §6 card style: 16px radius, shadow-sm, hover lift */}
-        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((feature) => (
-            <div
-              key={feature.title}
-              className="rounded-[16px] border border-[rgba(0,0,0,0.06)] bg-white p-8 shadow-[var(--shadow-sm)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]"
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-coral/10 text-coral">
-                {feature.icon}
-              </div>
-              <h3 className="mt-5 text-lg font-bold text-indigo">
-                {feature.title}
-              </h3>
-              <p className="mt-2 text-[15px] leading-relaxed text-slate">
-                {feature.description}
-              </p>
-            </div>
+        <div className="mt-12 grid gap-5 lg:grid-cols-3">
+          {benefits.map((benefit, index) => (
+            <article key={benefit.href} className="rounded-2xl border border-black/5 bg-white p-7 shadow-[var(--shadow-sm)]">
+              <span className="text-sm font-bold text-coral">0{index + 1}</span>
+              <h3 className="mt-5 text-xl font-bold text-indigo">{benefit.title}</h3>
+              <p className="mt-3 leading-relaxed text-slate">{benefit.body}</p>
+              <Link href={benefit.href} className="mt-6 inline-block font-semibold text-indigo underline decoration-coral underline-offset-4 hover:text-coral">{benefit.cta} →</Link>
+            </article>
           ))}
+        </div>
+        <div className="mt-16 grid items-center gap-10 lg:grid-cols-[1fr_420px]">
+          <div>
+            <h3 className="font-serif text-[clamp(28px,3vw,40px)] leading-tight text-indigo">A stronger page for every project.</h3>
+            <p className="mt-4 max-w-xl text-lg leading-relaxed text-slate">Start with a polished template, then give key links more room with a thumbnail, description or featured style. Grid layouts make room for different sizes—even on mobile. Pro lets you manage five pages and duplicate one as a starting point for another project.</p>
+            <Link href="/features/customization" className="mt-6 inline-block font-semibold text-indigo underline decoration-coral underline-offset-4">Explore page design →</Link>
+          </div>
+          <div className="max-h-[470px] overflow-hidden rounded-3xl border border-black/5 shadow-[var(--shadow-md)] [&_.ln-page]:min-h-0"><ExamplePage kind="service" /></div>
+        </div>
+        <div className="mt-16 rounded-2xl bg-indigo px-7 py-8 text-white sm:px-10">
+          <h3 className="text-xl font-bold">Give visitors a browser option</h3>
+          <p className="mt-2 max-w-3xl text-white/75">On supported Instagram, Facebook, Messenger and Threads mobile browsers, LinkNest can offer visitors an option to open your page in their browser. They can stay on the page either way.</p>
+          <Link href="/features/open-in-browser" className="mt-4 inline-block font-semibold underline decoration-coral underline-offset-4">How it works →</Link>
         </div>
       </div>
     </section>

@@ -16,6 +16,8 @@ import type { TurnstileClientConfig } from "@/lib/turnstile-types";
  */
 export type BlockRuntime = {
   mode: "public" | "preview";
+  /** Marketing examples use preview behavior and suppress every destination. */
+  embedded?: boolean;
   pageId: string;
   /** Named in the sign-up form's consent line. */
   pageTitle: string;

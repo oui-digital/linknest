@@ -32,10 +32,10 @@ export default function Footer() {
             </h3>
             <ul className="mt-4 space-y-3">
               {[
-                { label: "Features", href: "#features" },
-                { label: "Templates", href: "#templates" },
-                { label: "Pricing", href: "#pricing" },
-                { label: "FAQ", href: "#faq" },
+                { label: "Features", href: "/features" },
+                { label: "Templates", href: "/#templates" },
+                { label: "Pricing", href: "/pricing" },
+                { label: "FAQ", href: "/#faq" },
               ].map((link) => (
                 <li key={link.label}>
                   <a

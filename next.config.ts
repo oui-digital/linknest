@@ -19,6 +19,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  outputFileTracingIncludes: {
+    "/opengraph-image": ["./src/assets/marketing-fonts/*.ttf"],
+    "/features/*/opengraph-image": ["./src/assets/marketing-fonts/*.ttf"],
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

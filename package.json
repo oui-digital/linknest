@@ -15,7 +15,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "npx tsx src/lib/db/seed.ts",
-    "test:integration": "tsx tests/integration/ensure-test-db.ts && drizzle-kit push --config drizzle.integration.config.ts --force && vitest run --config vitest.integration.config.ts"
+    "test:integration": "tsx tests/integration/ensure-test-db.ts && drizzle-kit push --config drizzle.integration.config.ts --force && vitest run --config vitest.integration.config.ts",
+    "marketing:capture": "node --import tsx scripts/capture-marketing-examples.tsx",
+    "marketing:check-slug": "node --import tsx scripts/check-features-slug.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",
@@ -63,6 +65,8 @@
     "eslint-config-next": "16.1.6",
     "jsdom": "^26.1.0",
     "pg": "^8.23.0",
+    "playwright": "^1.64.0",
+    "postcss": "^8.5.29",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",

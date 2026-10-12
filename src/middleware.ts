@@ -11,6 +11,8 @@ const APP_ROUTES = new Set([
   "/login",
   "/signup",
   "/pricing",
+  "/features",
+  "/opengraph-image",
   "/auth",
   "/admin",
   "/settings",

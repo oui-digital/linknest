@@ -9,9 +9,10 @@ interface LinkBlockProps {
   block: Block;
   resolvedStyle?: React.CSSProperties;
   tile?: boolean;
+  embedded?: boolean;
 }
 
-export function LinkBlock({ block, resolvedStyle, tile = false }: LinkBlockProps) {
+export function LinkBlock({ block, resolvedStyle, tile = false, embedded = false }: LinkBlockProps) {
   if (!block.url) return null;
 
   const { thumbnailUrl, description, featured } = parseBlockContent("link", block.content);
@@ -54,14 +55,14 @@ export function LinkBlock({ block, resolvedStyle, tile = false }: LinkBlockProps
   };
 
   const label = block.label || block.url;
+  const Tag = embedded ? "span" : "a";
 
   return (
-    <a
-      href={block.url}
-      {...(external ? { target: "_blank", rel: USER_LINK_REL } : {})}
-      data-link-id={block.id}
+    <Tag
+      {...(!embedded ? { href: block.url, ...(external ? { target: "_blank", rel: USER_LINK_REL } : {}) } : {})}
+      data-link-id={embedded ? undefined : block.id}
       // The label alone: the description must not end up in analytics.
-      data-link-label={block.label ?? undefined}
+      data-link-label={embedded ? undefined : block.label ?? undefined}
       // wrap-anywhere is inherited by every label and description. Not
       // break-words: in card and tile modes those spans are centred flex items
       // sized to fit their content, and break-word does not shrink that size,
@@ -119,6 +120,6 @@ export function LinkBlock({ block, resolvedStyle, tile = false }: LinkBlockProps
       ) : (
         label
       )}
-    </a>
+    </Tag>
   );
 }
